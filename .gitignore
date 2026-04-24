@@ -1,0 +1,12 @@
+# Build output
+SPD_Checker/bin/
+SPD_Checker/obj/
+
+# Visual Studio
+.vs/
+
+# SPD data files (actual product files, not for repo)
+SPD_DATA/
+
+# PDF reference docs
+*.pdf
