@@ -84,8 +84,11 @@ namespace SPD_Checker.Logic
             string partNumberFromName = StripSuffix(nameNoExt);
             results.Add(CheckPartNumber(fileName, partNumberFromName, data));
 
-            // Phase 2+ 추가 예정
-            // results.Add(CheckManufacturerId(...));
+            // ── Phase 2: Manufacturer ID ─────────────────────────────────────
+            results.Add(CheckModuleMfr(fileName, data));
+            results.Add(CheckDramMfr(fileName, partNumberFromName, data));
+
+            // Phase 3+ 추가 예정
             // results.Add(CheckCrc(...));
 
             return results;
@@ -140,6 +143,97 @@ namespace SPD_Checker.Logic
                 Pass      = pass,
                 Status    = pass ? CheckStatus.Pass : CheckStatus.Fail,
                 Note      = $"Byte 521~550 | {hexDump}"
+            };
+        }
+
+        // ── Phase 2: Manufacturer ID ─────────────────────────────────────────
+        // Module Mfr : Byte 512~513 (고정: RAmos 0x07/0x25)
+        // DRAM Mfr   : Byte 552~553 (파일명 첫 '-' 이후 첫 글자로 결정)
+
+        private const int MODULE_MFR_OFFSET = 512;   // 0x200
+        private const int DRAM_MFR_OFFSET   = 552;   // 0x228
+
+        // Module Mfr 고정값 (RAmos Technology)
+        private static readonly byte MODULE_MFR_B1 = 0x07;
+        private static readonly byte MODULE_MFR_B2 = 0x25;
+
+        // DRAM Mfr 매핑 (파일명 첫 '-' 이후 첫 글자 → Byte552, Byte553)
+        private static readonly Dictionary<char, (byte B1, byte B2, string Name)> DRAM_MFR_MAP =
+            new Dictionary<char, (byte, byte, string)>
+            {
+                { 'G', (0x07, 0x25, "RAmos")  },
+                { 'S', (0x07, 0x25, "RAmos")  },
+                { 'N', (0x83, 0x0B, "Nanya")  },
+                { 'C', (0x8A, 0x91, "CXMT")   },
+                { 'M', (0x02, 0xB5, "Micron") },
+            };
+
+        private static CheckResult CheckModuleMfr(string fileName, byte[] data)
+        {
+            byte actual1 = data[MODULE_MFR_OFFSET];
+            byte actual2 = data[MODULE_MFR_OFFSET + 1];
+            bool pass    = actual1 == MODULE_MFR_B1 && actual2 == MODULE_MFR_B2;
+
+            return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = "Module Mfr ID",
+                Expected  = $"0x{MODULE_MFR_B1:X2} / 0x{MODULE_MFR_B2:X2}  (RAmos)",
+                Actual    = $"0x{actual1:X2} / 0x{actual2:X2}",
+                Pass      = pass,
+                Status    = pass ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = "Byte 512~513 (0x200~0x201)"
+            };
+        }
+
+        private static CheckResult CheckDramMfr(string fileName, string partNumberFromName, byte[] data)
+        {
+            byte actual1 = data[DRAM_MFR_OFFSET];
+            byte actual2 = data[DRAM_MFR_OFFSET + 1];
+
+            // 파일명 첫 '-' 이후 첫 글자 추출
+            int dashIdx = partNumberFromName.IndexOf('-');
+            if (dashIdx < 0 || dashIdx + 1 >= partNumberFromName.Length)
+            {
+                return new CheckResult
+                {
+                    FileName  = fileName,
+                    CheckItem = "DRAM Mfr ID",
+                    Expected  = "Unknown (cannot parse filename)",
+                    Actual    = $"0x{actual1:X2} / 0x{actual2:X2}",
+                    Pass      = false,
+                    Status    = CheckStatus.Fail,
+                    Note      = "Byte 552~553 (0x228~0x229) | 파일명 파싱 실패"
+                };
+            }
+
+            char key = char.ToUpper(partNumberFromName[dashIdx + 1]);
+
+            if (!DRAM_MFR_MAP.TryGetValue(key, out var expected))
+            {
+                return new CheckResult
+                {
+                    FileName  = fileName,
+                    CheckItem = "DRAM Mfr ID",
+                    Expected  = $"UNKNOWN (key='{key}')",
+                    Actual    = $"0x{actual1:X2} / 0x{actual2:X2}",
+                    Pass      = false,
+                    Status    = CheckStatus.Fail,
+                    Note      = $"Byte 552~553 | 미정의 DRAM 코드 '{key}'"
+                };
+            }
+
+            bool pass = actual1 == expected.B1 && actual2 == expected.B2;
+
+            return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = "DRAM Mfr ID",
+                Expected  = $"0x{expected.B1:X2} / 0x{expected.B2:X2}  ({expected.Name})",
+                Actual    = $"0x{actual1:X2} / 0x{actual2:X2}",
+                Pass      = pass,
+                Status    = pass ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = $"Byte 552~553 (0x228~0x229) | key='{key}'"
             };
         }
     }

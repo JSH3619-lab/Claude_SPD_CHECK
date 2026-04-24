@@ -28,8 +28,13 @@ namespace SPD_Checker
 
         // ── State ─────────────────────────────────────────────────────────────
         private readonly List<string>      _files   = new List<string>();
-        private readonly List<CheckResult> _results = new List<CheckResult>();
+        private readonly List<CheckResult> _results = new List<CheckResult>();  // 로그 export용 전체 결과
         private BackgroundWorker           _worker;
+
+        // 파일 단위 카운터
+        private int _filePass;
+        private int _fileFail;
+        private int _fileSkip;
 
         // ─────────────────────────────────────────────────────────────────────
         public MainForm()
@@ -174,12 +179,9 @@ namespace SPD_Checker
             dgvResults.RowTemplate.Height                        = 26;
             dgvResults.CellFormatting += DgvResults_CellFormatting;
 
-            AddColumn(dgvResults, "colFile",    "File Name",    25);
-            AddColumn(dgvResults, "colCheck",   "Check Item",   13);
-            AddColumn(dgvResults, "colExpected","Expected",     22);
-            AddColumn(dgvResults, "colActual",  "Actual",       22);
-            AddColumn(dgvResults, "colResult",  "Result",        8, centered: true, bold: true);
-            AddColumn(dgvResults, "colNote",    "Note (HEX)",   20);
+            AddColumn(dgvResults, "colFile",   "File Name",     35);
+            AddColumn(dgvResults, "colResult", "Result",         8, centered: true, bold: true);
+            AddColumn(dgvResults, "colFailed", "Failed Checks", 57);
 
             // Bottom Summary Bar
             var pnlBottom = MakePanel(DockStyle.Bottom, 32, Color.FromArgb(28, 57, 95));
@@ -243,11 +245,52 @@ namespace SPD_Checker
             progressBar.Value   = info.FileIndex;
             lblProgress.Text    = string.Format("Checking ({0}/{1}): {2}",
                                                 info.FileIndex, info.TotalFiles, info.FileName);
+
+            // 로그용 전체 결과 저장
             foreach (var r in info.Results)
-            {
                 _results.Add(r);
-                dgvResults.Rows.Add(r.FileName, r.CheckItem, r.Expected, r.Actual, r.Result, r.Note);
+
+            // 파일 단위 결과 판정
+            bool isSkip  = info.Results.Count == 1 && info.Results[0].Status == CheckStatus.Skip;
+            bool allPass = !isSkip && info.Results.All(r => r.Status == CheckStatus.Pass);
+
+            // FAIL 항목 텍스트 조합 ([번호] CheckItem  Expected → Actual)
+            string failedStr = "";
+            if (!allPass && !isSkip)
+            {
+                var parts = new List<string>();
+                for (int i = 0; i < info.Results.Count; i++)
+                {
+                    var r = info.Results[i];
+                    if (r.Status == CheckStatus.Fail)
+                        parts.Add(string.Format("[{0}] {1}   Expected: {2}   /   Actual: {3}",
+                            i + 1, r.CheckItem, r.Expected, r.Actual));
+                }
+                failedStr = string.Join("     |     ", parts);
             }
+            else if (isSkip)
+            {
+                failedStr = info.Results[0].Note;
+            }
+
+            // 행 추가 (파일 1개 = 행 1개)
+            string overallResult = isSkip ? "SKIP" : (allPass ? "PASS" : "FAIL");
+            int rowIdx = dgvResults.Rows.Add(info.FileName, overallResult, failedStr);
+
+            // 행 배경색 설정
+            var row = dgvResults.Rows[rowIdx];
+            if (allPass)
+                row.DefaultCellStyle.BackColor = Color.FromArgb(240, 255, 240);
+            else if (isSkip)
+                row.DefaultCellStyle.BackColor = Color.FromArgb(235, 235, 235);
+            else
+                row.DefaultCellStyle.BackColor = Color.FromArgb(255, 235, 235);
+
+            // 파일 단위 카운터
+            if (allPass)       _filePass++;
+            else if (isSkip)   _fileSkip++;
+            else               _fileFail++;
+
             UpdateSummary();
         }
 
@@ -264,10 +307,9 @@ namespace SPD_Checker
             }
             else
             {
-                int pass = _results.Count(r => r.Status == Models.CheckStatus.Pass);
-                int fail = _results.Count(r => r.Status == Models.CheckStatus.Fail);
-                int skip = _results.Count(r => r.Status == Models.CheckStatus.Skip);
-                lblProgress.Text = string.Format("Complete.  PASS: {0}   FAIL: {1}   SKIP: {2}", pass, fail, skip);
+                lblProgress.Text = string.Format(
+                    "Complete.  Files: {0}   PASS: {1}   FAIL: {2}   SKIP: {3}",
+                    _filePass + _fileFail + _fileSkip, _filePass, _fileFail, _fileSkip);
                 progressBar.Value = progressBar.Maximum;
             }
             UpdateSummary();
@@ -291,6 +333,7 @@ namespace SPD_Checker
             _files.Clear();
             _results.Clear();
             dgvResults.Rows.Clear();
+            _filePass = _fileFail = _fileSkip = 0;
             progressBar.Value = 0;
             lblProgress.Text  = "Ready";
             btnExport.Enabled = false;
@@ -408,13 +451,11 @@ namespace SPD_Checker
 
         private void UpdateSummary()
         {
-            int total = _results.Count;
-            int pass  = _results.Count(r => r.Status == Models.CheckStatus.Pass);
-            int fail  = _results.Count(r => r.Status == Models.CheckStatus.Fail);
-            int skip  = _results.Count(r => r.Status == Models.CheckStatus.Skip);
+            int total = _filePass + _fileFail + _fileSkip;
             lblSummary.Text = string.Format(
-                "Total: {0}  |  PASS: {1}  |  FAIL: {2}  |  SKIP: {3}", total, pass, fail, skip);
-            lblSummary.ForeColor = fail > 0 ? Color.FromArgb(255, 120, 120) : Color.White;
+                "Files: {0}  |  PASS: {1}  |  FAIL: {2}  |  SKIP: {3}",
+                total, _filePass, _fileFail, _fileSkip);
+            lblSummary.ForeColor = _fileFail > 0 ? Color.FromArgb(255, 120, 120) : Color.White;
         }
 
         private void SetRunning(bool running)
