@@ -186,12 +186,12 @@ namespace SPD_Checker.Logic
         private static readonly Dictionary<char, (byte B1, byte B2, string Name)[]> DRAM_MFR_MAP =
             new Dictionary<char, (byte, byte, string)[]>
             {
-                { 'G', new[] { (0x07, 0x25, "RAmos")  } },
-                { 'S', new[] { (0x07, 0x25, "RAmos")  } },
-                { 'H', new[] { (0x80, 0xAD, "SK Hynix") } },
-                { 'N', new[] { (0x83, 0x0B, "Nanya")  } },
-                { 'C', new[] { (0x8A, 0x91, "CXMT")   } },
-                { 'M', new[] { (0x80, 0x2C, "Micron"), (0x02, 0xB5, "Spectek") } },
+                { 'G', new (byte, byte, string)[] { (0x07, 0x25, "RAmos")  } },
+                { 'S', new (byte, byte, string)[] { (0x07, 0x25, "RAmos")  } },
+                { 'H', new (byte, byte, string)[] { (0x80, 0xAD, "SK Hynix") } },
+                { 'N', new (byte, byte, string)[] { (0x83, 0x0B, "Nanya")  } },
+                { 'C', new (byte, byte, string)[] { (0x8A, 0x91, "CXMT")   } },
+                { 'M', new (byte, byte, string)[] { (0x80, 0x2C, "Micron"), (0x02, 0xB5, "Spectek") } },
             };
 
         private static CheckResult CheckModuleMfr(string fileName, byte[] data)
@@ -531,49 +531,54 @@ namespace SPD_Checker.Logic
                 Note      = $"Byte 20~21 (0x014~0x015) | speed='{f.SpeedCode}'"
             };
 
-            // tAA min (Bytes 30~31, LE)  expected = CL × tCK  ±1ps
-            int  expectedTaa = spec.CL * spec.TckPs;
-            int  actualTaa   = data[TAA_MIN_OFFSET] | (data[TAA_MIN_OFFSET + 1] << 8);
-            bool passTaa     = Math.Abs(actualTaa - expectedTaa) <= 1;
+            // SPD 실측 tCK 사용 (0이면 나누기 방지)
+            int tckPs = actualTck > 0 ? actualTck : spec.TckPs;
+
+            // JEDEC 공식: nCK = TRUNCATE((timing_ps × 997 / tCK_ps + 1000) / 1000)
+            int actualTaa    = data[TAA_MIN_OFFSET]   | (data[TAA_MIN_OFFSET   + 1] << 8);
+            int actualTrcd   = data[TRCD_MIN_OFFSET]  | (data[TRCD_MIN_OFFSET  + 1] << 8);
+            int actualTrp    = data[TRP_MIN_OFFSET]   | (data[TRP_MIN_OFFSET   + 1] << 8);
+
+            int nckTaa  = (int)Math.Truncate((actualTaa  * 997.0 / tckPs + 1000.0) / 1000.0);
+            if (nckTaa % 2 != 0) nckTaa += 1;   // CL은 짝수 보정
+            int nckTrcd = (int)Math.Truncate((actualTrcd * 997.0 / tckPs + 1000.0) / 1000.0);
+            int nckTrp  = (int)Math.Truncate((actualTrp  * 997.0 / tckPs + 1000.0) / 1000.0);
+
+            bool passTaa  = nckTaa  == spec.CL;
+            bool passTrcd = nckTrcd == spec.TrcdNck;
+            bool passTrp  = nckTrp  == spec.TrpNck;
+
             yield return new CheckResult
             {
                 FileName  = fileName,
                 CheckItem = "tAA min",
-                Expected  = $"{expectedTaa} ps  (CL{spec.CL} × {spec.TckPs}ps)",
-                Actual    = $"{actualTaa} ps",
+                Expected  = $"CL{spec.CL}",
+                Actual    = $"{actualTaa} ps → CL{nckTaa}",
                 Pass      = passTaa,
                 Status    = passTaa ? CheckStatus.Pass : CheckStatus.Fail,
-                Note      = "Byte 30~31 (0x01E~0x01F) | ±1ps 허용"
+                Note      = $"Byte 30~31 | TRUNC(({actualTaa}×997/{tckPs}+1000)/1000)"
             };
 
-            // tRCD min (Bytes 32~33, LE)  expected = TrcdNck × tCK  ±1ps
-            int  expectedTrcd = spec.TrcdNck * spec.TckPs;
-            int  actualTrcd   = data[TRCD_MIN_OFFSET] | (data[TRCD_MIN_OFFSET + 1] << 8);
-            bool passTrcd     = Math.Abs(actualTrcd - expectedTrcd) <= 1;
             yield return new CheckResult
             {
                 FileName  = fileName,
                 CheckItem = "tRCD min",
-                Expected  = $"{expectedTrcd} ps  ({spec.TrcdNck}nCK × {spec.TckPs}ps)",
-                Actual    = $"{actualTrcd} ps",
+                Expected  = $"{spec.TrcdNck} nCK",
+                Actual    = $"{actualTrcd} ps → {nckTrcd} nCK",
                 Pass      = passTrcd,
                 Status    = passTrcd ? CheckStatus.Pass : CheckStatus.Fail,
-                Note      = "Byte 32~33 (0x020~0x021) | ±1ps 허용"
+                Note      = $"Byte 32~33 | TRUNC(({actualTrcd}×997/{tckPs}+1000)/1000)"
             };
 
-            // tRP min (Bytes 34~35, LE)  expected = TrpNck × tCK  ±1ps
-            int  expectedTrp = spec.TrpNck * spec.TckPs;
-            int  actualTrp   = data[TRP_MIN_OFFSET] | (data[TRP_MIN_OFFSET + 1] << 8);
-            bool passTrp     = Math.Abs(actualTrp - expectedTrp) <= 1;
             yield return new CheckResult
             {
                 FileName  = fileName,
                 CheckItem = "tRP min",
-                Expected  = $"{expectedTrp} ps  ({spec.TrpNck}nCK × {spec.TckPs}ps)",
-                Actual    = $"{actualTrp} ps",
+                Expected  = $"{spec.TrpNck} nCK",
+                Actual    = $"{actualTrp} ps → {nckTrp} nCK",
                 Pass      = passTrp,
                 Status    = passTrp ? CheckStatus.Pass : CheckStatus.Fail,
-                Note      = "Byte 34~35 (0x022~0x023) | ±1ps 허용"
+                Note      = $"Byte 34~35 | TRUNC(({actualTrp}×997/{tckPs}+1000)/1000)"
             };
         }
 
