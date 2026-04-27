@@ -16,28 +16,38 @@ namespace SPD_Checker.Logic
         // ── 표준 파일 접두사 ─────────────────────────────────────────────────
         private static readonly string[] STANDARD_PREFIXES = { "RM", "TM", "CM", "BM" };
 
+        // ── Module Mfr 식별 맵 (Bytes 512~513 → 제조사명) ────────────────────
+        // "RAmos" 만 검사 진행, 나머지는 Skip
+        private static readonly Dictionary<(byte, byte), string> MODULE_MFR_IDENTIFY =
+            new Dictionary<(byte, byte), string>
+            {
+                { (0x07, 0x25), "RAmos"    },
+                { (0x04, 0xCB), "ADATA"    },
+                { (0x80, 0xCE), "Samsung"  },
+                { (0x80, 0xAD), "SK Hynix" },
+                { (0x80, 0x2C), "Micron"   },
+            };
+
         // ── Public Entry Point ───────────────────────────────────────────────
         public static List<CheckResult> CheckFile(string filePath)
         {
-            var    results  = new List<CheckResult>();
-            string fileName = Path.GetFileName(filePath);
+            var    results   = new List<CheckResult>();
+            string fileName  = Path.GetFileName(filePath);
             string nameNoExt = Path.GetFileNameWithoutExtension(filePath);
 
-            // ── A100 예외 파일 감지 (RM/TM/CM/BM 으로 시작하지 않는 파일) ──
-            bool isStandard = STANDARD_PREFIXES.Any(p =>
-                nameNoExt.StartsWith(p, StringComparison.OrdinalIgnoreCase));
-
-            if (!isStandard)
+            // ── 확장자 확인 (.sp5 전용) ──────────────────────────────────────
+            string ext = Path.GetExtension(filePath);
+            if (!string.Equals(ext, ".sp5", StringComparison.OrdinalIgnoreCase))
             {
                 results.Add(new CheckResult
                 {
                     FileName  = fileName,
                     CheckItem = "File Type",
-                    Expected  = "RM / TM / CM / BM prefix",
-                    Actual    = nameNoExt,
+                    Expected  = ".sp5",
+                    Actual    = string.IsNullOrEmpty(ext) ? "(확장자 없음)" : ext,
                     Pass      = false,
                     Status    = CheckStatus.Skip,
-                    Note      = "A100 예외 파일 — 검사 생략"
+                    Note      = "SPD 파일(.sp5)이 아님 — 검사 생략"
                 });
                 return results;
             }
@@ -63,7 +73,80 @@ namespace SPD_Checker.Logic
                 return results;
             }
 
-            // ── 최소 크기 확인 ───────────────────────────────────────────────
+            // ── 최소 크기 확인 (Module Mfr ID 읽기에 514 bytes 필요) ─────────
+            if (data.Length < 514)
+            {
+                results.Add(new CheckResult
+                {
+                    FileName  = fileName,
+                    CheckItem = "File Size",
+                    Expected  = ">= 514 bytes",
+                    Actual    = $"{data.Length} bytes",
+                    Pass      = false,
+                    Status    = CheckStatus.Fail,
+                    Note      = "SPD 크기 부족"
+                });
+                return results;
+            }
+
+            // ── Module Mfr ID 라우팅 (Bytes 512~513) ─────────────────────────
+            byte mfrB1 = data[MODULE_MFR_OFFSET];
+            byte mfrB2 = data[MODULE_MFR_OFFSET + 1];
+
+            if (MODULE_MFR_IDENTIFY.TryGetValue((mfrB1, mfrB2), out string mfrName))
+            {
+                if (mfrName != "RAmos")
+                {
+                    results.Add(new CheckResult
+                    {
+                        FileName  = fileName,
+                        CheckItem = "Module Mfr ID",
+                        Expected  = "-",
+                        Actual    = $"0x{mfrB1:X2} / 0x{mfrB2:X2}  ({mfrName})",
+                        Pass      = false,
+                        Status    = CheckStatus.Skip,
+                        Note      = $"{mfrName} 모듈 — 검사 생략"
+                    });
+                    return results;
+                }
+                // mfrName == "RAmos" → 계속 진행
+            }
+            else
+            {
+                // 미등록 제조사
+                results.Add(new CheckResult
+                {
+                    FileName  = fileName,
+                    CheckItem = "Module Mfr ID",
+                    Expected  = "-",
+                    Actual    = $"0x{mfrB1:X2} / 0x{mfrB2:X2}",
+                    Pass      = false,
+                    Status    = CheckStatus.Skip,
+                    Note      = $"0x{mfrB1:X2}/0x{mfrB2:X2} 미등록 제조사 — 검사 생략"
+                });
+                return results;
+            }
+
+            // ── RAmos 모듈: 파일명 prefix 확인 (RM/TM/CM/BM) ────────────────
+            bool isStandard = STANDARD_PREFIXES.Any(p =>
+                nameNoExt.StartsWith(p, StringComparison.OrdinalIgnoreCase));
+
+            if (!isStandard)
+            {
+                results.Add(new CheckResult
+                {
+                    FileName  = fileName,
+                    CheckItem = "Part Number",
+                    Expected  = "RM / TM / CM / BM prefix",
+                    Actual    = nameNoExt,
+                    Pass      = false,
+                    Status    = CheckStatus.Fail,
+                    Note      = "RAmos 모듈이지만 파일명 비표준 — Part Err"
+                });
+                return results;
+            }
+
+            // ── 전체 크기 확인 (Part Number 영역까지) ────────────────────────
             int minRequired = PART_NUMBER_OFFSET + PART_NUMBER_LENGTH;
             if (data.Length < minRequired)
             {
@@ -186,12 +269,12 @@ namespace SPD_Checker.Logic
         private static readonly Dictionary<char, (byte B1, byte B2, string Name)[]> DRAM_MFR_MAP =
             new Dictionary<char, (byte, byte, string)[]>
             {
-                { 'G', new[] { (0x07, 0x25, "RAmos")  } },
-                { 'S', new[] { (0x07, 0x25, "RAmos")  } },
-                { 'H', new[] { (0x80, 0xAD, "SK Hynix") } },
-                { 'N', new[] { (0x83, 0x0B, "Nanya")  } },
-                { 'C', new[] { (0x8A, 0x91, "CXMT")   } },
-                { 'M', new[] { (0x80, 0x2C, "Micron"), (0x02, 0xB5, "Spectek") } },
+                { 'G', new (byte, byte, string)[] { (0x07, 0x25, "RAmos")  } },
+                { 'S', new (byte, byte, string)[] { (0x07, 0x25, "RAmos")  } },
+                { 'H', new (byte, byte, string)[] { (0x80, 0xAD, "SK Hynix") } },
+                { 'N', new (byte, byte, string)[] { (0x83, 0x0B, "Nanya")  } },
+                { 'C', new (byte, byte, string)[] { (0x8A, 0x91, "CXMT")   } },
+                { 'M', new (byte, byte, string)[] { (0x80, 0x2C, "Micron"), (0x02, 0xB5, "Spectek") } },
             };
 
         private static CheckResult CheckModuleMfr(string fileName, byte[] data)
