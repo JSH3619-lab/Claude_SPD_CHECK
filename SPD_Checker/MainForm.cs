@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
 using SPD_Checker.Logic;
@@ -14,27 +15,55 @@ namespace SPD_Checker
     public class MainForm : Form
     {
         // ── Controls ─────────────────────────────────────────────────────────
-        private Panel           pnlDropInner;
-        private Label           lblDropText;
-        private Label           lblFileCount;
-        private Button          btnBrowse;
-        private Button          btnClear;
-        private Button          btnRun;
-        private Button          btnExport;
-        private ProgressBar     progressBar;
-        private Label           lblProgress;
-        private DataGridView    dgvResults;
-        private Label           lblSummary;
+        private Panel        pnlDropInner;
+        private Label        lblDropText;
+        private Label        lblFileCount;
+        private Button       btnBrowse;
+        private Button       btnClear;
+        private Button       btnRun;
+        private Button       btnExport;
+        private Button       _btnFilterPass;
+        private Button       _btnFilterFail;
+        private Button       _btnFilterSkip;
+        private ProgressBar  progressBar;
+        private Label        lblProgress;
+        private DataGridView dgvResults;
+        private Label        lblSummary;
+        private Label        lblStatsContent;
 
         // ── State ─────────────────────────────────────────────────────────────
-        private readonly List<string>      _files   = new List<string>();
-        private readonly List<CheckResult> _results = new List<CheckResult>();  // 로그 export용 전체 결과
-        private BackgroundWorker           _worker;
+        private readonly List<string>                        _files       = new List<string>();
+        private readonly List<CheckResult>                   _results     = new List<CheckResult>();
+        private readonly Dictionary<string,int>              _failStats   = new Dictionary<string, int>();
+        private readonly Dictionary<string,List<CheckResult>> _fileResults = new Dictionary<string, List<CheckResult>>();
+        private BackgroundWorker                             _worker;
 
-        // 파일 단위 카운터
         private int _filePass;
         private int _fileFail;
         private int _fileSkip;
+
+        private bool _showPass = true;
+        private bool _showFail = true;
+        private bool _showSkip = true;
+
+        // ── Check Items (side panel static list) ──────────────────────────────
+        private static readonly (string Phase, string Item)[] CHECK_ITEMS_LIST =
+        {
+            ("Ph.1", "Part Number"),
+            ("Ph.2", "Module Mfr ID"),
+            ("",     "DRAM Mfr ID"),
+            ("Ph.3", "DRAM Type"),
+            ("",     "Module Type"),
+            ("",     "Die Density"),
+            ("",     "I/O Width"),
+            ("",     "Bank Groups"),
+            ("",     "VDD Nominal"),
+            ("",     "tCKAVGmin"),
+            ("",     "tAA / tRCD / tRP"),
+            ("",     "Module Rank"),
+            ("",     "Module Density"),
+            ("Ph.4", "CRC"),
+        };
 
         // ─────────────────────────────────────────────────────────────────────
         public MainForm()
@@ -46,28 +75,28 @@ namespace SPD_Checker
         // ── UI Construction ──────────────────────────────────────────────────
         private void BuildUI()
         {
-            Text            = "DDR5 SPD Checker  v1.0";
-            Size            = new Size(1140, 730);
-            MinimumSize     = new Size(900,  600);
-            StartPosition   = FormStartPosition.CenterScreen;
-            Font            = new Font("Segoe UI", 9F);
-            BackColor       = Color.FromArgb(245, 246, 248);
+            Text          = "DDR5 SPD Checker  v1.0";
+            Size          = new Size(1140, 730);
+            MinimumSize   = new Size(900, 600);
+            StartPosition = FormStartPosition.CenterScreen;
+            Font          = new Font("Segoe UI", 9F);
+            BackColor     = Color.FromArgb(245, 246, 248);
 
             // Header
             var pnlHeader = MakePanel(DockStyle.Top, 50, Color.FromArgb(28, 57, 95));
             var lblTitle  = MakeLabel("DDR5 SPD Checker", new Font("Segoe UI", 14F, FontStyle.Bold),
                                       Color.White, DockStyle.Fill, ContentAlignment.MiddleLeft);
             lblTitle.Padding = new Padding(15, 0, 0, 0);
-            var lblVer    = MakeLabel("v1.0  |  Phase 1: Part Number",
-                                      new Font("Segoe UI", 8F), Color.FromArgb(170, 195, 220),
-                                      DockStyle.Right, ContentAlignment.MiddleCenter);
-            lblVer.Width  = 230;
+            var lblVer = MakeLabel("v1.0  |  Ph.1 ~ 4",
+                                   new Font("Segoe UI", 8F), Color.FromArgb(170, 195, 220),
+                                   DockStyle.Right, ContentAlignment.MiddleCenter);
+            lblVer.Width = 140;
             pnlHeader.Controls.Add(lblTitle);
             pnlHeader.Controls.Add(lblVer);
 
             // Drop Zone
             var pnlDrop = MakePanel(DockStyle.Top, 85, Color.FromArgb(245, 246, 248));
-            pnlDrop.Padding  = new Padding(10, 8, 10, 8);
+            pnlDrop.Padding   = new Padding(10, 8, 10, 8);
             pnlDrop.AllowDrop = true;
             pnlDrop.DragEnter += OnDragEnter;
             pnlDrop.DragDrop  += OnDragDrop;
@@ -105,25 +134,28 @@ namespace SPD_Checker
             var pnlCtrl = MakePanel(DockStyle.Top, 46, Color.FromArgb(245, 246, 248));
             pnlCtrl.Padding = new Padding(10, 6, 10, 6);
 
-            btnBrowse    = MakeButton("Browse Files",  Color.FromArgb(65, 125, 190), 0);
-            btnClear     = MakeButton("Clear",         Color.FromArgb(108, 117, 125), 120);
+            btnBrowse    = MakeButton("Browse Files", Color.FromArgb(65, 125, 190), 0);
+            btnClear     = MakeButton("Clear",        Color.FromArgb(108, 117, 125), 120);
             lblFileCount = new Label
             {
                 Text      = "Files selected: 0",
-                Location  = new Point(205, 10),
-                Size      = new Size(220, 22),
+                Location  = new Point(236, 10),
+                Size      = new Size(185, 22),
                 ForeColor = Color.FromArgb(50, 50, 50)
             };
-            btnRun    = MakeButton("▶  Run Check", Color.FromArgb(34, 153, 60), 0);
+            btnRun = MakeButton("▶  Run Check", Color.FromArgb(34, 153, 60), 0);
             btnRun.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             btnRun.Size   = new Size(130, 32);
-            btnExport = MakeButton("Export Log",   Color.FromArgb(20, 155, 175), 0);
+            btnExport = MakeButton("Export Log", Color.FromArgb(20, 155, 175), 0);
             btnExport.Anchor  = AnchorStyles.Top | AnchorStyles.Right;
             btnExport.Size    = new Size(110, 32);
             btnExport.Enabled = false;
 
-            pnlCtrl.Controls.AddRange(new Control[]
-                { btnBrowse, btnClear, lblFileCount, btnRun, btnExport });
+            _btnFilterPass = MakeFilterButton("PASS", Color.FromArgb(34, 153, 60),  430);
+            _btnFilterFail = MakeFilterButton("FAIL", Color.FromArgb(210, 45, 55),  514);
+            _btnFilterSkip = MakeFilterButton("SKIP", Color.FromArgb(150, 150, 150), 598);
+
+            pnlCtrl.Controls.AddRange(new Control[] { btnBrowse, btnClear, lblFileCount, _btnFilterPass, _btnFilterFail, _btnFilterSkip, btnRun, btnExport });
             pnlCtrl.Layout += (s, e) =>
             {
                 btnRun.Location    = new Point(pnlCtrl.Width - 255, 7);
@@ -136,11 +168,13 @@ namespace SPD_Checker
 
             progressBar = new ProgressBar
             {
-                Dock   = DockStyle.Left,
-                Width  = 460,
-                Height = 22,
-                Style  = ProgressBarStyle.Continuous
+                Dock      = DockStyle.Left,
+                Width     = 460,
+                Height    = 22,
+                Style     = ProgressBarStyle.Continuous,
+                ForeColor = Color.FromArgb(34, 153, 60)
             };
+            this.Load += (s, e) => SetWindowTheme(progressBar.Handle, "", "");
             lblProgress = new Label
             {
                 Dock      = DockStyle.Fill,
@@ -152,22 +186,25 @@ namespace SPD_Checker
             pnlProg.Controls.Add(lblProgress);
             pnlProg.Controls.Add(progressBar);
 
+            // Side Panel
+            var pnlSide = BuildSidePanel();
+
             // Results Grid
             dgvResults = new DataGridView
             {
-                Dock                            = DockStyle.Fill,
-                BackgroundColor                 = Color.White,
-                BorderStyle                     = BorderStyle.None,
-                RowHeadersVisible               = false,
-                AllowUserToAddRows              = false,
-                AllowUserToDeleteRows           = false,
-                ReadOnly                        = true,
-                SelectionMode                   = DataGridViewSelectionMode.FullRowSelect,
-                AutoSizeColumnsMode             = DataGridViewAutoSizeColumnsMode.Fill,
-                ColumnHeadersHeight             = 32,
-                EnableHeadersVisualStyles       = false,
-                GridColor                       = Color.FromArgb(220, 224, 228),
-                CellBorderStyle                 = DataGridViewCellBorderStyle.SingleHorizontal
+                Dock                      = DockStyle.Fill,
+                BackgroundColor           = Color.White,
+                BorderStyle               = BorderStyle.None,
+                RowHeadersVisible         = false,
+                AllowUserToAddRows        = false,
+                AllowUserToDeleteRows     = false,
+                ReadOnly                  = true,
+                SelectionMode             = DataGridViewSelectionMode.FullRowSelect,
+                AutoSizeColumnsMode       = DataGridViewAutoSizeColumnsMode.None,
+                ColumnHeadersHeight       = 32,
+                EnableHeadersVisualStyles = false,
+                GridColor                 = Color.FromArgb(220, 224, 228),
+                CellBorderStyle           = DataGridViewCellBorderStyle.SingleHorizontal
             };
             dgvResults.ColumnHeadersDefaultCellStyle.BackColor  = Color.FromArgb(28, 57, 95);
             dgvResults.ColumnHeadersDefaultCellStyle.ForeColor  = Color.White;
@@ -176,12 +213,46 @@ namespace SPD_Checker
             dgvResults.DefaultCellStyle.SelectionBackColor      = Color.FromArgb(200, 220, 245);
             dgvResults.DefaultCellStyle.SelectionForeColor      = Color.Black;
             dgvResults.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(248, 250, 253);
-            dgvResults.RowTemplate.Height                        = 26;
+            dgvResults.RowTemplate.Height                       = 26;
             dgvResults.CellFormatting += DgvResults_CellFormatting;
 
-            AddColumn(dgvResults, "colFile",   "File Name",     35);
-            AddColumn(dgvResults, "colResult", "Result",         8, centered: true, bold: true);
-            AddColumn(dgvResults, "colFailed", "Failed Checks", 57);
+            // File Name: auto-size to displayed content
+            var colFile = new DataGridViewTextBoxColumn
+            {
+                Name         = "colFile",
+                HeaderText   = "File Name",
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.DisplayedCells,
+                MinimumWidth = 160,
+                SortMode     = DataGridViewColumnSortMode.Automatic
+            };
+            // Result: fixed 80px, centered, bold
+            var colResult = new DataGridViewTextBoxColumn
+            {
+                Name         = "colResult",
+                HeaderText   = "Result",
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
+                Width        = 80,
+                MinimumWidth = 80,
+                SortMode     = DataGridViewColumnSortMode.Automatic
+            };
+            colResult.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+            colResult.DefaultCellStyle.Font      = new Font("Segoe UI", 9F, FontStyle.Bold);
+            // Failed Items: fill remaining
+            var colFailed = new DataGridViewTextBoxColumn
+            {
+                Name         = "colFailed",
+                HeaderText   = "Failed Items",
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+                SortMode     = DataGridViewColumnSortMode.Automatic
+            };
+
+            dgvResults.Columns.AddRange(colFile, colResult, colFailed);
+
+            // Content area: grid (Fill) + side panel (Right)
+            // pnlSide must be added AFTER dgvResults so it has higher index → docked first
+            var pnlContent = new Panel { Dock = DockStyle.Fill };
+            pnlContent.Controls.Add(dgvResults);
+            pnlContent.Controls.Add(pnlSide);
 
             // Bottom Summary Bar
             var pnlBottom = MakePanel(DockStyle.Bottom, 32, Color.FromArgb(28, 57, 95));
@@ -192,18 +263,115 @@ namespace SPD_Checker
             pnlBottom.Controls.Add(lblSummary);
 
             // Compose (reverse order for DockStyle.Top stacking)
-            Controls.Add(dgvResults);
+            Controls.Add(pnlContent);
             Controls.Add(pnlProg);
             Controls.Add(pnlCtrl);
             Controls.Add(pnlDrop);
             Controls.Add(pnlHeader);
             Controls.Add(pnlBottom);
 
-            // Wire events
-            btnBrowse.Click += BtnBrowse_Click;
-            btnClear.Click  += BtnClear_Click;
-            btnRun.Click    += BtnRun_Click;
-            btnExport.Click += BtnExport_Click;
+            _btnFilterPass.Click += (s, e) => { _showPass = !_showPass; UpdateFilterButton(_btnFilterPass, _showPass, Color.FromArgb(34, 153, 60));  ApplyFilter(); };
+            _btnFilterFail.Click += (s, e) => { _showFail = !_showFail; UpdateFilterButton(_btnFilterFail, _showFail, Color.FromArgb(210, 45, 55));  ApplyFilter(); };
+            _btnFilterSkip.Click += (s, e) => { _showSkip = !_showSkip; UpdateFilterButton(_btnFilterSkip, _showSkip, Color.FromArgb(150, 150, 150)); ApplyFilter(); };
+
+            btnBrowse.Click            += BtnBrowse_Click;
+            btnClear.Click             += BtnClear_Click;
+            btnRun.Click               += BtnRun_Click;
+            btnExport.Click            += BtnExport_Click;
+            dgvResults.CellDoubleClick += DgvResults_CellDoubleClick;
+            dgvResults.CellMouseEnter  += (s, e) =>
+            {
+                if (e.RowIndex < 0) return;
+                string r = dgvResults.Rows[e.RowIndex].Cells["colResult"].Value?.ToString();
+                dgvResults.Cursor = (r == "PASS" || r == "FAIL") ? Cursors.Hand : Cursors.Default;
+            };
+            dgvResults.CellMouseLeave  += (s, e) => dgvResults.Cursor = Cursors.Default;
+        }
+
+        private Panel BuildSidePanel()
+        {
+            const int SIDE_W = 242;
+            const int ROW_H  = 19;
+
+            var pnlSide = new Panel
+            {
+                Dock      = DockStyle.Right,
+                Width     = SIDE_W,
+                BackColor = Color.FromArgb(240, 242, 246)
+            };
+            // Left border line
+            pnlSide.Paint += (s, e) =>
+                e.Graphics.DrawLine(new Pen(Color.FromArgb(200, 206, 215), 1), 0, 0, 0, ((Panel)s).Height);
+
+            // ── Check Items header ─────────────────────────────────────────
+            var pnlCheckHdr = new Panel { Dock = DockStyle.Top, Height = 28, BackColor = Color.FromArgb(28, 57, 95) };
+            pnlCheckHdr.Controls.Add(MakeLabel("  Check Items",
+                new Font("Segoe UI", 8.5F, FontStyle.Bold), Color.White, DockStyle.Fill, ContentAlignment.MiddleLeft));
+
+            // ── Check Items list ───────────────────────────────────────────
+            int listH = CHECK_ITEMS_LIST.Length * ROW_H + 8;
+            var pnlCheckList = new Panel
+            {
+                Dock      = DockStyle.Top,
+                Height    = listH,
+                BackColor = Color.FromArgb(240, 242, 246)
+            };
+            for (int i = 0; i < CHECK_ITEMS_LIST.Length; i++)
+            {
+                var (phase, item) = CHECK_ITEMS_LIST[i];
+                bool hasPhase = phase.Length > 0;
+
+                var lblPhase = new Label
+                {
+                    Text      = phase,
+                    Location  = new Point(6, 4 + i * ROW_H),
+                    Size      = new Size(34, ROW_H),
+                    Font      = new Font("Segoe UI", 7.5F, hasPhase ? FontStyle.Bold : FontStyle.Regular),
+                    ForeColor = hasPhase ? Color.FromArgb(65, 125, 190) : Color.Transparent,
+                    TextAlign = ContentAlignment.MiddleLeft
+                };
+                var lblItem = new Label
+                {
+                    Text      = item,
+                    Location  = new Point(44, 4 + i * ROW_H),
+                    Size      = new Size(SIDE_W - 50, ROW_H),
+                    Font      = new Font("Segoe UI", 8.5F),
+                    ForeColor = Color.FromArgb(35, 45, 60),
+                    TextAlign = ContentAlignment.MiddleLeft
+                };
+                pnlCheckList.Controls.Add(lblPhase);
+                pnlCheckList.Controls.Add(lblItem);
+            }
+
+            // ── Divider ────────────────────────────────────────────────────
+            var pnlDiv = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = Color.FromArgb(200, 206, 215) };
+
+            // ── FAIL Stats header ──────────────────────────────────────────
+            var pnlStatsHdr = new Panel { Dock = DockStyle.Top, Height = 28, BackColor = Color.FromArgb(28, 57, 95) };
+            pnlStatsHdr.Controls.Add(MakeLabel("  Session FAIL Stats",
+                new Font("Segoe UI", 8.5F, FontStyle.Bold), Color.White, DockStyle.Fill, ContentAlignment.MiddleLeft));
+
+            // ── FAIL Stats content ─────────────────────────────────────────
+            var pnlStatsBody = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(240, 242, 246) };
+            lblStatsContent = new Label
+            {
+                Dock      = DockStyle.Fill,
+                Text      = "  —",
+                Font      = new Font("Consolas", 8.5F),
+                ForeColor = Color.FromArgb(55, 65, 80),
+                TextAlign = ContentAlignment.TopLeft,
+                Padding   = new Padding(6, 6, 0, 0)
+            };
+            pnlStatsBody.Controls.Add(lblStatsContent);
+
+            // Add in order: Fill first (index 0), then Top controls (higher index = docked first = appears higher)
+            pnlSide.Controls.Add(pnlStatsBody);   // index 0 → Fill
+            pnlSide.Controls.Add(pnlStatsHdr);    // index 1 → Top (bottom-most Top)
+            pnlSide.Controls.Add(pnlDiv);          // index 2 → Top
+            pnlSide.Controls.Add(pnlCheckList);    // index 3 → Top
+            pnlSide.Controls.Add(pnlCheckHdr);     // index 4 → Top (appears at very top)
+
+            return pnlSide;
         }
 
         // ── Background Worker ────────────────────────────────────────────────
@@ -211,7 +379,7 @@ namespace SPD_Checker
         {
             _worker = new BackgroundWorker
             {
-                WorkerReportsProgress    = true,
+                WorkerReportsProgress      = true,
                 WorkerSupportsCancellation = true
             };
             _worker.DoWork             += Worker_DoWork;
@@ -225,7 +393,6 @@ namespace SPD_Checker
             for (int i = 0; i < files.Count; i++)
             {
                 if (_worker.CancellationPending) { e.Cancel = true; return; }
-
                 string file    = files[i];
                 var    results = SpdChecker.CheckFile(file);
                 _worker.ReportProgress(0, new ProgressInfo
@@ -246,38 +413,39 @@ namespace SPD_Checker
             lblProgress.Text    = string.Format("Checking ({0}/{1}): {2}",
                                                 info.FileIndex, info.TotalFiles, info.FileName);
 
-            // 로그용 전체 결과 저장
             foreach (var r in info.Results)
                 _results.Add(r);
 
-            // 파일 단위 결과 판정
+            _fileResults[info.FileName] = info.Results;
+
             bool isSkip  = info.Results.Count == 1 && info.Results[0].Status == CheckStatus.Skip;
             bool allPass = !isSkip && info.Results.All(r => r.Status == CheckStatus.Pass);
 
-            // FAIL 항목 텍스트 조합 ([번호] CheckItem  Expected → Actual)
+            // Failed Items: 항목명만 표시 (Expected/Actual 제거)
             string failedStr = "";
             if (!allPass && !isSkip)
             {
-                var parts = new List<string>();
-                for (int i = 0; i < info.Results.Count; i++)
+                var failNames = info.Results
+                    .Where(r => r.Status == CheckStatus.Fail)
+                    .Select(r => r.CheckItem)
+                    .ToList();
+                failedStr = string.Join(",  ", failNames);
+
+                foreach (string name in failNames)
                 {
-                    var r = info.Results[i];
-                    if (r.Status == CheckStatus.Fail)
-                        parts.Add(string.Format("[{0}] {1}   Expected: {2}   /   Actual: {3}",
-                            i + 1, r.CheckItem, r.Expected, r.Actual));
+                    if (!_failStats.ContainsKey(name)) _failStats[name] = 0;
+                    _failStats[name]++;
                 }
-                failedStr = string.Join("     |     ", parts);
+                UpdateSidePanel();
             }
             else if (isSkip)
             {
                 failedStr = info.Results[0].Note;
             }
 
-            // 행 추가 (파일 1개 = 행 1개)
             string overallResult = isSkip ? "SKIP" : (allPass ? "PASS" : "FAIL");
             int rowIdx = dgvResults.Rows.Add(info.FileName, overallResult, failedStr);
 
-            // 행 배경색 설정
             var row = dgvResults.Rows[rowIdx];
             if (allPass)
                 row.DefaultCellStyle.BackColor = Color.FromArgb(240, 255, 240);
@@ -286,10 +454,11 @@ namespace SPD_Checker
             else
                 row.DefaultCellStyle.BackColor = Color.FromArgb(255, 235, 235);
 
-            // 파일 단위 카운터
-            if (allPass)       _filePass++;
-            else if (isSkip)   _fileSkip++;
-            else               _fileFail++;
+            row.Visible = overallResult switch { "PASS" => _showPass, "FAIL" => _showFail, "SKIP" => _showSkip, _ => true };
+
+            if (allPass)     _filePass++;
+            else if (isSkip) _fileSkip++;
+            else             _fileFail++;
 
             UpdateSummary();
         }
@@ -298,19 +467,18 @@ namespace SPD_Checker
         {
             SetRunning(false);
             if (e.Cancelled)
-            {
                 lblProgress.Text = "Cancelled.";
-            }
             else if (e.Error != null)
-            {
                 lblProgress.Text = "Error: " + e.Error.Message;
-            }
             else
             {
                 lblProgress.Text = string.Format(
                     "Complete.  Files: {0}   PASS: {1}   FAIL: {2}   SKIP: {3}",
                     _filePass + _fileFail + _fileSkip, _filePass, _fileFail, _fileSkip);
-                progressBar.Value = progressBar.Maximum;
+                progressBar.Value    = progressBar.Maximum;
+                progressBar.ForeColor = _fileFail > 0
+                    ? Color.FromArgb(210, 45, 55)
+                    : Color.FromArgb(34, 153, 60);
             }
             UpdateSummary();
         }
@@ -332,6 +500,8 @@ namespace SPD_Checker
         {
             _files.Clear();
             _results.Clear();
+            _failStats.Clear();
+            _fileResults.Clear();
             dgvResults.Rows.Clear();
             _filePass = _fileFail = _fileSkip = 0;
             progressBar.Value = 0;
@@ -339,6 +509,7 @@ namespace SPD_Checker
             btnExport.Enabled = false;
             UpdateFileCount();
             UpdateSummary();
+            UpdateSidePanel();
         }
 
         private void BtnRun_Click(object sender, EventArgs e)
@@ -350,8 +521,13 @@ namespace SPD_Checker
                 return;
             }
             _results.Clear();
+            _failStats.Clear();
+            _fileResults.Clear();
             dgvResults.Rows.Clear();
-            progressBar.Value = 0;
+            _filePass = _fileFail = _fileSkip = 0;
+            progressBar.Value     = 0;
+            progressBar.ForeColor = Color.FromArgb(34, 153, 60);
+            UpdateSidePanel();
             SetRunning(true);
             _worker.RunWorkerAsync(_files.ToList());
         }
@@ -411,21 +587,20 @@ namespace SPD_Checker
         private void DgvResults_CellFormatting(object sender, DataGridViewCellFormattingEventArgs e)
         {
             if (dgvResults.Columns[e.ColumnIndex].Name != "colResult" || e.Value == null) return;
-            string val = e.Value.ToString();
-            if (val == "PASS")
+            switch (e.Value.ToString())
             {
-                e.CellStyle.BackColor = Color.FromArgb(34, 153, 60);
-                e.CellStyle.ForeColor = Color.White;
-            }
-            else if (val == "FAIL")
-            {
-                e.CellStyle.BackColor = Color.FromArgb(210, 45, 55);
-                e.CellStyle.ForeColor = Color.White;
-            }
-            else if (val == "SKIP")
-            {
-                e.CellStyle.BackColor = Color.FromArgb(150, 150, 150);
-                e.CellStyle.ForeColor = Color.White;
+                case "PASS":
+                    e.CellStyle.BackColor = Color.FromArgb(34, 153, 60);
+                    e.CellStyle.ForeColor = Color.White;
+                    break;
+                case "FAIL":
+                    e.CellStyle.BackColor = Color.FromArgb(210, 45, 55);
+                    e.CellStyle.ForeColor = Color.White;
+                    break;
+                case "SKIP":
+                    e.CellStyle.BackColor = Color.FromArgb(150, 150, 150);
+                    e.CellStyle.ForeColor = Color.White;
+                    break;
             }
         }
 
@@ -458,6 +633,19 @@ namespace SPD_Checker
             lblSummary.ForeColor = _fileFail > 0 ? Color.FromArgb(255, 120, 120) : Color.White;
         }
 
+        private void UpdateSidePanel()
+        {
+            if (_failStats.Count == 0)
+            {
+                lblStatsContent.Text = "  —";
+                return;
+            }
+            var sb = new StringBuilder();
+            foreach (var kvp in _failStats.OrderByDescending(k => k.Value))
+                sb.AppendLine(string.Format("  {0} ×{1}", kvp.Key.PadRight(16), kvp.Value));
+            lblStatsContent.Text = sb.ToString();
+        }
+
         private void SetRunning(bool running)
         {
             btnRun.Enabled    = !running;
@@ -466,28 +654,19 @@ namespace SPD_Checker
             btnExport.Enabled = !running && _results.Count > 0;
         }
 
+        [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+        private static extern int SetWindowTheme(IntPtr hwnd, string pszSubAppName, string pszSubIdList);
+
         // ── UI Factory Methods ───────────────────────────────────────────────
         private static Panel MakePanel(DockStyle dock, int height, Color bg)
-        {
-            return new Panel { Dock = dock, Height = height, BackColor = bg };
-        }
+            => new Panel { Dock = dock, Height = height, BackColor = bg };
 
         private static Label MakeLabel(string text, Font font, Color fore,
                                        DockStyle dock, ContentAlignment align)
-        {
-            return new Label
-            {
-                Text      = text,
-                Font      = font,
-                ForeColor = fore,
-                Dock      = dock,
-                TextAlign = align
-            };
-        }
+            => new Label { Text = text, Font = font, ForeColor = fore, Dock = dock, TextAlign = align };
 
         private static Button MakeButton(string text, Color bg, int x)
-        {
-            return new Button
+            => new Button
             {
                 Text      = text,
                 Location  = new Point(x, 7),
@@ -498,23 +677,161 @@ namespace SPD_Checker
                 Font      = new Font("Segoe UI", 9F, FontStyle.Bold),
                 FlatAppearance = { BorderSize = 0 }
             };
+
+        private static Button MakeFilterButton(string text, Color activeColor, int x)
+        {
+            var btn = new Button
+            {
+                Text      = text,
+                Location  = new Point(x, 7),
+                Size      = new Size(80, 32),
+                BackColor = activeColor,
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Font      = new Font("Segoe UI", 9F, FontStyle.Bold)
+            };
+            btn.FlatAppearance.BorderSize = 0;
+            return btn;
         }
 
-        private static void AddColumn(DataGridView dgv, string name, string header,
-                                      int fillWeight, bool centered = false, bool bold = false)
+        private static void UpdateFilterButton(Button btn, bool active, Color activeColor)
         {
-            var col = new DataGridViewTextBoxColumn
+            btn.BackColor = active ? activeColor : Color.FromArgb(200, 200, 200);
+            btn.ForeColor = active ? Color.White  : Color.FromArgb(100, 100, 100);
+        }
+
+        private void ApplyFilter()
+        {
+            foreach (DataGridViewRow row in dgvResults.Rows)
             {
-                Name       = name,
-                HeaderText = header,
-                FillWeight = fillWeight,
-                SortMode   = DataGridViewColumnSortMode.Automatic
-            };
-            if (centered)
-                col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
-            if (bold)
-                col.DefaultCellStyle.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
-            dgv.Columns.Add(col);
+                string result = row.Cells["colResult"].Value?.ToString();
+                row.Visible = result switch
+                {
+                    "PASS" => _showPass,
+                    "FAIL" => _showFail,
+                    "SKIP" => _showSkip,
+                    _      => true
+                };
+            }
+        }
+
+        // ── Double-click Detail ───────────────────────────────────────────────
+        private void DgvResults_CellDoubleClick(object sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex < 0) return;
+            string fileName = dgvResults.Rows[e.RowIndex].Cells["colFile"].Value?.ToString();
+            string result   = dgvResults.Rows[e.RowIndex].Cells["colResult"].Value?.ToString();
+            if (result == "SKIP" || fileName == null) return;
+            if (!_fileResults.TryGetValue(fileName, out var results)) return;
+            using (var dlg = new DetailForm(fileName, results))
+                dlg.ShowDialog(this);
+        }
+
+        // ── Detail Dialog ─────────────────────────────────────────────────────
+        private class DetailForm : Form
+        {
+            public DetailForm(string fileName, List<CheckResult> results)
+            {
+                Text          = fileName + "  —  Detail";
+                Size          = new Size(820, 480);
+                MinimumSize   = new Size(600, 360);
+                StartPosition = FormStartPosition.CenterParent;
+                Font          = new Font("Segoe UI", 9F);
+                BackColor     = Color.FromArgb(245, 246, 248);
+
+                // Header
+                var pnlHdr = new Panel { Dock = DockStyle.Top, Height = 40, BackColor = Color.FromArgb(28, 57, 95) };
+                var lblHdr = new Label
+                {
+                    Text      = "  " + fileName,
+                    Font      = new Font("Segoe UI", 10F, FontStyle.Bold),
+                    ForeColor = Color.White,
+                    Dock      = DockStyle.Fill,
+                    TextAlign = ContentAlignment.MiddleLeft
+                };
+                pnlHdr.Controls.Add(lblHdr);
+
+                // Grid
+                var dgv = new DataGridView
+                {
+                    Dock                      = DockStyle.Fill,
+                    BackgroundColor           = Color.White,
+                    BorderStyle               = BorderStyle.None,
+                    RowHeadersVisible         = false,
+                    AllowUserToAddRows        = false,
+                    AllowUserToDeleteRows     = false,
+                    ReadOnly                  = true,
+                    SelectionMode             = DataGridViewSelectionMode.FullRowSelect,
+                    AutoSizeColumnsMode       = DataGridViewAutoSizeColumnsMode.None,
+                    ColumnHeadersHeight       = 30,
+                    EnableHeadersVisualStyles = false,
+                    GridColor                 = Color.FromArgb(220, 224, 228),
+                    CellBorderStyle           = DataGridViewCellBorderStyle.SingleHorizontal
+                };
+                dgv.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(28, 57, 95);
+                dgv.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
+                dgv.ColumnHeadersDefaultCellStyle.Font      = new Font("Segoe UI", 9F, FontStyle.Bold);
+                dgv.DefaultCellStyle.Font                   = new Font("Consolas", 9F);
+                dgv.RowTemplate.Height                      = 24;
+
+                var colItem = new DataGridViewTextBoxColumn { Name = "Item",     HeaderText = "Check Item", AutoSizeMode = DataGridViewAutoSizeColumnMode.DisplayedCells, MinimumWidth = 120 };
+                var colExp  = new DataGridViewTextBoxColumn { Name = "Expected", HeaderText = "Expected",   AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, FillWeight = 35 };
+                var colAct  = new DataGridViewTextBoxColumn { Name = "Actual",   HeaderText = "Actual",     AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, FillWeight = 35 };
+                var colRes  = new DataGridViewTextBoxColumn
+                {
+                    Name         = "Result",
+                    HeaderText   = "Result",
+                    AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
+                    Width        = 72,
+                    MinimumWidth = 72
+                };
+                colRes.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+                colRes.DefaultCellStyle.Font      = new Font("Segoe UI", 9F, FontStyle.Bold);
+                var colNote = new DataGridViewTextBoxColumn { Name = "Note", HeaderText = "Note", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, FillWeight = 30 };
+                colNote.DefaultCellStyle.ForeColor = Color.FromArgb(90, 100, 115);
+
+                dgv.Columns.AddRange(colItem, colExp, colAct, colRes, colNote);
+
+                foreach (var r in results)
+                {
+                    int idx = dgv.Rows.Add(r.CheckItem, r.Expected, r.Actual,
+                                           r.Pass ? "PASS" : "FAIL", r.Note);
+                    var row = dgv.Rows[idx];
+                    row.DefaultCellStyle.BackColor = r.Pass
+                        ? Color.FromArgb(240, 255, 240)
+                        : Color.FromArgb(255, 235, 235);
+                }
+
+                dgv.CellFormatting += (s, e) =>
+                {
+                    if (dgv.Columns[e.ColumnIndex].Name != "Result" || e.Value == null) return;
+                    if (e.Value.ToString() == "PASS")
+                    { e.CellStyle.BackColor = Color.FromArgb(34, 153, 60); e.CellStyle.ForeColor = Color.White; }
+                    else
+                    { e.CellStyle.BackColor = Color.FromArgb(210, 45, 55); e.CellStyle.ForeColor = Color.White; }
+                };
+
+                // Bottom close button
+                var pnlBot = new Panel { Dock = DockStyle.Bottom, Height = 44, BackColor = Color.FromArgb(237, 239, 243) };
+                var btnClose = new Button
+                {
+                    Text      = "Close",
+                    Size      = new Size(90, 30),
+                    FlatStyle = FlatStyle.Flat,
+                    BackColor = Color.FromArgb(108, 117, 125),
+                    ForeColor = Color.White,
+                    Font      = new Font("Segoe UI", 9F, FontStyle.Bold),
+                    Anchor    = AnchorStyles.Right | AnchorStyles.Top
+                };
+                btnClose.FlatAppearance.BorderSize = 0;
+                btnClose.Click += (s, e) => Close();
+                pnlBot.Layout += (s, e) => btnClose.Location = new Point(pnlBot.Width - 104, 7);
+                pnlBot.Controls.Add(btnClose);
+
+                Controls.Add(dgv);
+                Controls.Add(pnlBot);
+                Controls.Add(pnlHdr);
+            }
         }
 
         // ── Progress Info ─────────────────────────────────────────────────────

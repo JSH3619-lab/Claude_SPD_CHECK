@@ -49,12 +49,16 @@
 
 ---
 
-## CRC 블록 (Bytes 126~127, 254~255) — Phase 4 검증 대상
+## CRC (Bytes 510~511, 0x1FE~0x1FF) — Phase 4 검증 대상
 
-| 블록 | 계산 범위 | CRC 저장 위치 | 바이트 순서 |
-|------|-----------|--------------|-----------|
-| Block 0 | Byte 0 ~ 125 | Byte 126~127 | Little-Endian |
-| Block 1 | Byte 128 ~ 253 | Byte 254~255 | Little-Endian |
+| 항목 | 내용 |
+|------|------|
+| 계산 범위 | Byte 0 ~ 509 (0x000 ~ 0x1FD), 총 510바이트 |
+| CRC LSB | Byte 510 (0x1FE) |
+| CRC MSB | Byte 511 (0x1FF) |
+| 바이트 순서 | Little-Endian |
+
+> Bytes 448~509 (Block 7 Reserved, 모두 0x00)도 계산 범위에 포함됨.
 
 ---
 

@@ -146,8 +146,8 @@ namespace SPD_Checker.Logic
                 return results;
             }
 
-            // ── 전체 크기 확인 (Part Number 영역까지) ────────────────────────
-            int minRequired = PART_NUMBER_OFFSET + PART_NUMBER_LENGTH;
+            // ── 전체 크기 확인 (DRAM Mfr ID 553까지 필요) ───────────────────
+            int minRequired = DRAM_MFR_OFFSET + 2;   // 554 = 552 + 2
             if (data.Length < minRequired)
             {
                 results.Add(new CheckResult
@@ -196,7 +196,11 @@ namespace SPD_Checker.Logic
                 results.Add(CheckVdd(fileName, data));
                 results.AddRange(CheckSpeed(fileName, fields, data));
                 results.Add(CheckRank(fileName, fields, data));
+                results.Add(CheckModuleDensity(fileName, fields, data));
             }
+
+            // ── Phase 4: CRC ─────────────────────────────────────────────────
+            results.AddRange(CheckCrc(fileName, data));
 
             return results;
         }
@@ -224,10 +228,10 @@ namespace SPD_Checker.Logic
         // "0Y", "-TN" 등 SPD에 포함되지 않는 접미사 제거
         private static string StripSuffix(string nameNoExt)
         {
-            if (nameNoExt.EndsWith("0Y", StringComparison.OrdinalIgnoreCase))
-                nameNoExt = nameNoExt.Substring(0, nameNoExt.Length - 2);
             if (nameNoExt.EndsWith("-TN", StringComparison.OrdinalIgnoreCase))
                 nameNoExt = nameNoExt.Substring(0, nameNoExt.Length - 3);
+            if (nameNoExt.EndsWith("0Y", StringComparison.OrdinalIgnoreCase))
+                nameNoExt = nameNoExt.Substring(0, nameNoExt.Length - 2);
             return nameNoExt;
         }
 
@@ -240,7 +244,8 @@ namespace SPD_Checker.Logic
             Array.Copy(data, PART_NUMBER_OFFSET, pnBytes, 0, PART_NUMBER_LENGTH);
 
             string actualTrim = Encoding.ASCII.GetString(pnBytes).TrimEnd('\x20', '\x00');
-            bool   pass       = string.Equals(expectedPartNumber, actualTrim, StringComparison.Ordinal);
+            string actualNorm = StripSuffix(actualTrim);
+            bool   pass       = string.Equals(expectedPartNumber, actualNorm, StringComparison.Ordinal);
             string hexDump    = BitConverter.ToString(pnBytes).Replace("-", " ");
 
             return new CheckResult
@@ -349,6 +354,31 @@ namespace SPD_Checker.Logic
             {
                 { '1', 0x00 },   // 1 Rank  bits[5:3]=000
                 { '2', 0x08 },   // 2 Rank  bits[5:3]=001
+            };
+
+        private static readonly Dictionary<string, int> DENSITY_CODE_GB_MAP =
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "1G",  1 }, { "2G",  2 }, { "4G",  4 }, { "8G",  8 },
+                { "AG", 16 }, { "BG", 32 }, { "CG", 64 },
+            };
+
+        private static readonly Dictionary<byte, int> DIE_DENSITY_GB_MAP =
+            new Dictionary<byte, int>
+            {
+                { 0x01,  4 }, { 0x02,  8 }, { 0x04, 16 }, { 0x05, 24 }, { 0x06, 32 },
+            };
+
+        private static readonly Dictionary<byte, int> DIES_PER_PKG_MAP =
+            new Dictionary<byte, int>
+            {
+                { 0, 1 }, { 1, 2 }, { 2, 2 }, { 3, 4 }, { 4, 8 }, { 5, 16 },
+            };
+
+        private static readonly Dictionary<byte, int> IO_WIDTH_BITS_MAP =
+            new Dictionary<byte, int>
+            {
+                { 0, 4 }, { 1, 8 }, { 2, 16 },
             };
 
         private struct SpeedSpec
@@ -590,7 +620,7 @@ namespace SPD_Checker.Logic
                 yield return new CheckResult
                 {
                     FileName  = fileName,
-                    CheckItem = "Speed",
+                    CheckItem = "tCKAVGmin",
                     Expected  = "-",
                     Actual    = "Speed 코드 미검출",
                     Pass      = false,
@@ -697,9 +727,108 @@ namespace SPD_Checker.Logic
             };
         }
 
-        // ── Phase 2: Manufacturer ID ─────────────────────────────────────────
-        // Module Mfr : Byte 512~513 (고정: RAmos 0x07/0x25)
-        // DRAM Mfr   : Byte 552~553 (파일명 첫 '-' 이후 첫 글자로 결정)
+        private static CheckResult CheckModuleDensity(string fileName, PartFields f, byte[] data)
+        {
+            if (!DENSITY_CODE_GB_MAP.TryGetValue(f.DensityCode, out int expectedGb))
+                return new CheckResult
+                {
+                    FileName  = fileName,
+                    CheckItem = "Module Density",
+                    Expected  = $"UNKNOWN (code='{f.DensityCode}')",
+                    Actual    = "-",
+                    Pass      = false,
+                    Status    = CheckStatus.Fail,
+                    Note      = "파일명 Density 코드 미정의"
+                };
+
+            byte byte4       = data[DIE_DENSITY_OFFSET];
+            byte densityCode = (byte)(byte4 & 0x1F);
+            byte diesPkgCode = (byte)((byte4 >> 5) & 0x07);
+            byte byte6       = data[IO_WIDTH_OFFSET];
+            byte ioCode      = (byte)((byte6 >> 5) & 0x07);
+            byte byte234     = data[RANK_OFFSET];
+            byte rankBits    = (byte)((byte234 >> 3) & 0x07);
+
+            if (!DIE_DENSITY_GB_MAP.TryGetValue(densityCode, out int dieDensityGb) ||
+                !DIES_PER_PKG_MAP.TryGetValue(diesPkgCode, out int diesPerPkg) ||
+                !IO_WIDTH_BITS_MAP.TryGetValue(ioCode, out int ioWidthBits))
+                return new CheckResult
+                {
+                    FileName  = fileName,
+                    CheckItem = "Module Density",
+                    Expected  = $"{expectedGb} GB (code='{f.DensityCode}')",
+                    Actual    = $"B4=0x{byte4:X2} B6=0x{byte6:X2} B234=0x{byte234:X2}",
+                    Pass      = false,
+                    Status    = CheckStatus.Fail,
+                    Note      = "SPD Byte 4/6/234 디코딩 실패"
+                };
+
+            int rankCount = rankBits + 1;
+            int actualGb  = (dieDensityGb * diesPerPkg * rankCount * 64) / (ioWidthBits * 8);
+            bool pass     = actualGb == expectedGb;
+
+            return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = "Module Density",
+                Expected  = $"{expectedGb} GB (code='{f.DensityCode}')",
+                Actual    = $"{actualGb} GB ({dieDensityGb}Gb×{diesPerPkg}×{rankCount}R×64/{ioWidthBits}b×8)",
+                Pass      = pass,
+                Status    = pass ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = $"Byte 4 (density+dies) / Byte 6 (IO width) / Byte 234 (rank)"
+            };
+        }
+
+        // ── Phase 4: CRC ─────────────────────────────────────────────────────
+        // JESD400-5C §7 Address Map: Byte 0~509 → CRC at Byte 510(LSB) 511(MSB)
+        private const int CRC_OFFSET = 510;   // 0x1FE
+
+        private static ushort ComputeCrc16(byte[] data, int offset, int length)
+        {
+            ushort crc = 0x0000;
+            for (int i = offset; i < offset + length; i++)
+            {
+                crc ^= (ushort)(data[i] << 8);
+                for (int j = 0; j < 8; j++)
+                    crc = (crc & 0x8000) != 0
+                        ? (ushort)((crc << 1) ^ 0x1021)
+                        : (ushort)(crc << 1);
+            }
+            return crc;
+        }
+
+        private static IEnumerable<CheckResult> CheckCrc(string fileName, byte[] data)
+        {
+            if (data.Length < 512)
+            {
+                yield return new CheckResult
+                {
+                    FileName  = fileName,
+                    CheckItem = "CRC",
+                    Expected  = "-",
+                    Actual    = $"{data.Length} bytes",
+                    Pass      = false,
+                    Status    = CheckStatus.Fail,
+                    Note      = "CRC 검사 불가 — 파일 크기 512 bytes 미만"
+                };
+                yield break;
+            }
+
+            ushort calc   = ComputeCrc16(data, 0, 510);
+            ushort stored = (ushort)(data[CRC_OFFSET] | (data[CRC_OFFSET + 1] << 8));
+            bool   pass   = calc == stored;
+
+            yield return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = "CRC",
+                Expected  = $"0x{calc:X4}",
+                Actual    = $"0x{stored:X4}",
+                Pass      = pass,
+                Status    = pass ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = "Byte 510~511 (0x1FE~0x1FF) | CRC-16 poly=0x1021 over Byte 0~509"
+            };
+        }
 
         private static CheckResult CheckDramMfr(string fileName, string partNumberFromName, byte[] data)
         {
