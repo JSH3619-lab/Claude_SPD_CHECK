@@ -221,11 +221,13 @@ namespace SPD_Checker.Logic
         }
 
         // ── 파일명 접미사 제거 ───────────────────────────────────────────────
-        // "-TN" 등 SPD에 포함되지 않는 접미사 제거
+        // "0Y", "-TN" 등 SPD에 포함되지 않는 접미사 제거
         private static string StripSuffix(string nameNoExt)
         {
+            if (nameNoExt.EndsWith("0Y", StringComparison.OrdinalIgnoreCase))
+                nameNoExt = nameNoExt.Substring(0, nameNoExt.Length - 2);
             if (nameNoExt.EndsWith("-TN", StringComparison.OrdinalIgnoreCase))
-                return nameNoExt.Substring(0, nameNoExt.Length - 3);
+                nameNoExt = nameNoExt.Substring(0, nameNoExt.Length - 3);
             return nameNoExt;
         }
 
