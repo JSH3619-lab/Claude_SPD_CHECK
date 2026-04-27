@@ -73,7 +73,7 @@
 
 | 위치 | 항목 | 비고 |
 |------|------|------|
-| [0] | DRAM Mfr 코드 | G/S=RAmos / N=Nanya / C=CXMT / M=Micron |
+| [0] | DRAM Mfr 코드 | G/S=RAmos / H=SK Hynix / N=Nanya / C=CXMT / M=Micron·Spectek (Micron 계열) |
 | 문자열 탐색 | Speed 코드 (2자) | 아래 Speed 코드 표 참조 — 고정 위치 아님, 부분문자열 탐색 |
 
 > **Speed 코드 탐색:** 첫 번째 '-' 이후 문자열에서 아래 표의 코드가 포함되는지 검색 (Contains).
@@ -233,9 +233,9 @@ Total_GB = (Die_Density_Gb × Dies_per_pkg × Package_Ranks × 64) / (IO_Width_b
 | SK Hynix | 1 | 0x80 | 0xAD | |
 | Micron | 1 | 0x80 | 0x2C | |
 | Samsung | 1 | 0x80 | 0xCE | |
-| CXMT | TBD | TBD | TBD | 추후 확인 필요 |
-| Nanya | TBD | TBD | TBD | 추후 확인 필요 |
-| Spectek | TBD | TBD | TBD | Micron 계열, 확인 필요 |
+| CXMT | 11 | 0x8A | 0x91 | |
+| Nanya | 4 | 0x83 | 0x0B | |
+| Spectek | 3 | 0x02 | 0xB5 | Micron 계열 |
 
 ---
 
