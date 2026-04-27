@@ -286,6 +286,8 @@ namespace SPD_Checker
                 dgvResults.Cursor = (r == "PASS" || r == "FAIL") ? Cursors.Hand : Cursors.Default;
             };
             dgvResults.CellMouseLeave  += (s, e) => dgvResults.Cursor = Cursors.Default;
+            dgvResults.KeyDown         += DgvResults_KeyDown;
+            dgvResults.CellToolTipTextNeeded += DgvResults_CellToolTipTextNeeded;
         }
 
         private Panel BuildSidePanel()
@@ -725,6 +727,32 @@ namespace SPD_Checker
             if (!_fileResults.TryGetValue(fileName, out var results)) return;
             using (var dlg = new DetailForm(fileName, results))
                 dlg.ShowDialog(this);
+        }
+
+        private void DgvResults_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode != Keys.Enter) return;
+            e.Handled        = true;
+            e.SuppressKeyPress = true;
+            if (dgvResults.CurrentRow == null) return;
+            int    rowIdx  = dgvResults.CurrentRow.Index;
+            string fileName = dgvResults.Rows[rowIdx].Cells["colFile"].Value?.ToString();
+            string result   = dgvResults.Rows[rowIdx].Cells["colResult"].Value?.ToString();
+            if (result == "SKIP" || fileName == null) return;
+            if (!_fileResults.TryGetValue(fileName, out var results)) return;
+            using (var dlg = new DetailForm(fileName, results))
+                dlg.ShowDialog(this);
+        }
+
+        private void DgvResults_CellToolTipTextNeeded(object sender, DataGridViewCellToolTipTextNeededEventArgs e)
+        {
+            if (e.RowIndex < 0) return;
+            string fileName = dgvResults.Rows[e.RowIndex].Cells["colFile"].Value?.ToString();
+            if (fileName == null || !_fileResults.TryGetValue(fileName, out var results)) return;
+            var lines = results
+                .Where(r => r.Status == CheckStatus.Fail && !string.IsNullOrEmpty(r.Note))
+                .Select(r => $"[{r.CheckItem}]  {r.Note}");
+            e.ToolTipText = string.Join("\n", lines);
         }
 
         // ── Detail Dialog ─────────────────────────────────────────────────────
