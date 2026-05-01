@@ -33,8 +33,25 @@
 | 예외 | 파일 확장자 / Module Mfr 라우팅 / 접미사 처리 | ✅ 완료 |
 | 1 | Part Number 검증 (파일명 vs Byte 521~550) | ✅ 완료 |
 | 2 | Manufacturer ID 검증 (Module Mfr / DRAM Mfr) | ✅ 완료 |
-| 3 | 파트 내용 검증 (DIMM Type / Density / Width / Rank / Speed) | ✅ 완료 |
-| 4 | CRC 검증 | 설계 완료 — 코드 미착수 |
+| 3 | DRAM Type / Module Type / Die Density / I/O Width / Bank Groups / VDD | ✅ 완료 |
+| 3 | tCKAVGmin / tAA / tRCD / tRP (Speed 코드 기반 타이밍 검증) | ✅ 완료 |
+| 3 | Module Rank / Module Density (계산값 비교) | ✅ 완료 |
+| 4 | CRC-16 검증 (Byte 0~509 → Byte 510~511, poly=0x1021) | ✅ 완료 |
+| XMP | XMP 3.0 검증 (6000 이상 속도 코드 파트: CM/CQ/CR/CS) | ✅ 완료 |
+
+### XMP 3.0 검증 항목 (Phase XMP 세부)
+
+| 항목 | 내용 |
+|------|------|
+| ID | Byte 640~642 고정값 확인 |
+| Profiles Enabled | CM=0x01(P1만), CQ/CR/CS=0x03(P1+P2) |
+| Global CRC | Byte 640~701 → Byte 702~703 |
+| P1/P2 VPP / VDD / VDDQ | Bank 코드 기반 전압값 확인 |
+| P1/P2 tCKAVGmin / tAAmin / tRCDmin / tRPmin | 속도 코드 기반 타이밍 확인 |
+| P1/P2 CL Mask | 목표 CL 비트 SET 확인 |
+| P1/P2 Name String | "RM-[DataRate]-[CL]-[tRCD]-[tRAS]" 교차 검증 |
+| P1/P2 Profile CRC | 각 프로파일 64byte CRC-16 확인 |
+| P2 속도 | CQ→CM / CR→CQ / CS→CR (한 단계 낮은 속도) |
 
 ---
 
@@ -57,7 +74,8 @@ C:\JSH_Folder\SPD_Check_PGM\
 │   └── docs\
 │       ├── part_number_parsing.md   ← 파트 넘버 파싱 규칙 + Speed 코드 표
 │       ├── jesd400_bytes.md         ← JESD400-5C Byte 위치 + JEDEC ID 전체 참조
-│       └── phase4_crc.md            ← Phase 4 CRC 설계 (구현 가이드 포함)
+│       ├── phase4_crc.md            ← Phase 4 CRC 설계 (구현 가이드 포함)
+│       └── xmp_bytes.md             ← Intel XMP 3.0 전체 Byte 위치 참조
 └── SPD_Checker\
     ├── SPD_Checker.csproj
     ├── Program.cs
@@ -80,3 +98,4 @@ C:\JSH_Folder\SPD_Check_PGM\
 @.claude/docs/part_number_parsing.md
 @.claude/docs/jesd400_bytes.md
 @.claude/docs/phase4_crc.md
+@.claude/docs/xmp_bytes.md
