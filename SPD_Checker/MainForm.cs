@@ -22,6 +22,8 @@ namespace SPD_Checker
         private Button       btnClear;
         private Button       btnRun;
         private Button       btnExport;
+        private Button       btnFix;
+        private ContextMenuStrip _fixMenu;
         private Button       _btnFilterPass;
         private Button       _btnFilterFail;
         private Button       _btnFilterSkip;
@@ -159,15 +161,26 @@ namespace SPD_Checker
             btnExport.Size    = new Size(110, 32);
             btnExport.Enabled = false;
 
+            btnFix = MakeButton("Fix FAILs ▼", Color.FromArgb(170, 70, 20), 0);
+            btnFix.Anchor  = AnchorStyles.Top | AnchorStyles.Right;
+            btnFix.Size    = new Size(115, 32);
+            btnFix.Enabled = false;
+            _fixMenu = new ContextMenuStrip();
+            _fixMenu.Items.Add("Save as _FIXED  (원본 보존)", null, (s, e) => RunFix(overwrite: false));
+            _fixMenu.Items.Add(new ToolStripSeparator());
+            _fixMenu.Items.Add("⚠  Overwrite Original", null, (s, e) => RunFix(overwrite: true));
+            btnFix.Click += (s, e) => _fixMenu.Show(btnFix, new Point(0, btnFix.Height));
+
             _btnFilterPass = MakeFilterButton("PASS", Color.FromArgb(34, 153, 60),  430);
             _btnFilterFail = MakeFilterButton("FAIL", Color.FromArgb(210, 45, 55),  514);
             _btnFilterSkip = MakeFilterButton("SKIP", Color.FromArgb(150, 150, 150), 598);
 
-            pnlCtrl.Controls.AddRange(new Control[] { btnBrowse, btnClear, lblFileCount, _btnFilterPass, _btnFilterFail, _btnFilterSkip, btnRun, btnExport });
+            pnlCtrl.Controls.AddRange(new Control[] { btnBrowse, btnClear, lblFileCount, _btnFilterPass, _btnFilterFail, _btnFilterSkip, btnRun, btnExport, btnFix });
             pnlCtrl.Layout += (s, e) =>
             {
-                btnRun.Location    = new Point(pnlCtrl.Width - 255, 7);
-                btnExport.Location = new Point(pnlCtrl.Width - 120, 7);
+                btnRun.Location    = new Point(pnlCtrl.Width - 385, 7);
+                btnExport.Location = new Point(pnlCtrl.Width - 245, 7);
+                btnFix.Location    = new Point(pnlCtrl.Width - 125, 7);
             };
 
             // Progress Row
@@ -662,6 +675,55 @@ namespace SPD_Checker
             btnBrowse.Enabled = !running;
             btnClear.Enabled  = !running;
             btnExport.Enabled = !running && _results.Count > 0;
+            btnFix.Enabled    = !running && _results.Any(r => r.Status == CheckStatus.Fail);
+        }
+
+        private void RunFix(bool overwrite)
+        {
+            if (overwrite)
+            {
+                var confirm = MessageBox.Show(
+                    "원본 파일을 덮어씁니다. 계속할까요?",
+                    "Overwrite Original", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                if (confirm != DialogResult.Yes) return;
+            }
+
+            var failFileNames = _results
+                .Where(r => r.Status == CheckStatus.Fail)
+                .Select(r => r.FileName)
+                .Distinct()
+                .ToList();
+
+            var fixed_ = 0;
+            var errors = new List<string>();
+
+            foreach (string name in failFileNames)
+            {
+                string path = _files.FirstOrDefault(f =>
+                    string.Equals(Path.GetFileName(f), name, StringComparison.OrdinalIgnoreCase));
+                if (path == null) { errors.Add(name + ": 경로 없음"); continue; }
+                try
+                {
+                    string text    = File.ReadAllText(path);
+                    byte[] data    = SpdChecker.ParseSpdText(text);
+                    byte[] fixedData = SpdFixer.ApplyFixes(data, path);
+                    if (overwrite)
+                        SpdFixer.SaveOverwrite(path, fixedData);
+                    else
+                        SpdFixer.SaveAsFixed(path, fixedData);
+                    fixed_++;
+                }
+                catch (Exception ex)
+                {
+                    errors.Add(name + ": " + ex.Message);
+                }
+            }
+
+            string msg = string.Format("{0}개 파일 수정 완료.", fixed_);
+            if (errors.Count > 0) msg += "\n\n오류:\n" + string.Join("\n", errors);
+            msg += "\n\nRun 버튼을 눌러 재검사하세요.";
+            MessageBox.Show(msg, "Fix 완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            UpdateFileCount();
         }
 
         [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]

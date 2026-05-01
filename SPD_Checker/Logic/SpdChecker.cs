@@ -213,7 +213,7 @@ namespace SPD_Checker.Logic
 
         // ── CSV Hex 텍스트 파싱 ──────────────────────────────────────────────
         // 형식: "30,12,02,..." CRLF 구분, 16바이트/줄, 64줄 = 1024 논리 바이트
-        private static byte[] ParseSpdText(string filePath)
+        internal static byte[] ParseSpdText(string filePath)
         {
             string text = File.ReadAllText(filePath, Encoding.ASCII);
 
@@ -232,7 +232,7 @@ namespace SPD_Checker.Logic
 
         // ── 파일명 접미사 제거 ───────────────────────────────────────────────
         // "0Y", "-TN" 등 SPD에 포함되지 않는 접미사 제거
-        private static string StripSuffix(string nameNoExt)
+        internal static string StripSuffix(string nameNoExt)
         {
             if (nameNoExt.EndsWith("-TN", StringComparison.OrdinalIgnoreCase))
                 nameNoExt = nameNoExt.Substring(0, nameNoExt.Length - 3);
@@ -389,7 +389,7 @@ namespace SPD_Checker.Logic
                 { 0, 4 }, { 1, 8 }, { 2, 16 },
             };
 
-        private struct SpeedSpec
+        internal struct SpeedSpec
         {
             public string Name;
             public int    TckPs;
@@ -399,7 +399,7 @@ namespace SPD_Checker.Logic
             public int    TrpNck;
         }
 
-        private static readonly Dictionary<string, SpeedSpec> SPEED_MAP =
+        internal static readonly Dictionary<string, SpeedSpec> SPEED_MAP =
             new Dictionary<string, SpeedSpec>(StringComparer.Ordinal)
             {
                 { "QK", new SpeedSpec { Name="DDR5-4800", TckPs=416, TckAvgMin=0x01A0, CL=40, TrcdNck=39, TrpNck=39 } },
@@ -412,11 +412,11 @@ namespace SPD_Checker.Logic
             };
 
         // XMP 속도 코드 (6000 이상) — JEDEC SPD는 WM(5600) 기준으로 검증
-        private static readonly HashSet<string> XMP_SPEED_CODES =
+        internal static readonly HashSet<string> XMP_SPEED_CODES =
             new HashSet<string>(StringComparer.Ordinal) { "CM", "CQ", "CR", "CS" };
 
         // ── Phase 3: Part Number Field Parser ────────────────────────────────
-        private struct PartFields
+        internal struct PartFields
         {
             public char   DimmType;
             public string DensityCode;
@@ -424,12 +424,13 @@ namespace SPD_Checker.Logic
             public char   CompositionCode;
             public char   DieDensityCode;
             public char   RankCode;
-            public string SpeedCode;   // null = 미검출
+            public char   DramMfrCode;   // '-' 이후 첫 글자 (G/S/H/N/C/M)
+            public string SpeedCode;     // null = 미검출
             public bool   Valid;
             public string Error;
         }
 
-        private static PartFields ParsePartFields(string partNoFromName)
+        internal static PartFields ParsePartFields(string partNoFromName)
         {
             var f = new PartFields();
 
@@ -452,10 +453,12 @@ namespace SPD_Checker.Logic
             f.DieDensityCode  = char.ToUpper(core[6]);
             f.RankCode        = core[7];
 
-            // Speed 코드: '-' 이후 문자열에서 Contains 탐색
+            // Speed 코드 + DRAM Mfr 코드: '-' 이후 문자열에서 파싱
             if (dashIdx >= 0 && dashIdx + 1 < partNoFromName.Length)
             {
                 string suffix = partNoFromName.Substring(dashIdx + 1);
+                if (suffix.Length > 0)
+                    f.DramMfrCode = char.ToUpper(suffix[0]);
                 foreach (string code in SPEED_MAP.Keys)
                 {
                     if (suffix.IndexOf(code, StringComparison.OrdinalIgnoreCase) >= 0)
@@ -834,7 +837,7 @@ namespace SPD_Checker.Logic
                 { "WM", '5' }, { "CM", '6' }, { "CQ", '6' }, { "CR", '7' }, { "CS", '7' },
             };
 
-        private static ushort ComputeCrc16(byte[] data, int offset, int length)
+        internal static ushort ComputeCrc16(byte[] data, int offset, int length)
         {
             ushort crc = 0x0000;
             for (int i = offset; i < offset + length; i++)

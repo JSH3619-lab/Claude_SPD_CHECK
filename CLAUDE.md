@@ -38,6 +38,7 @@
 | 3 | Module Rank / Module Density (계산값 비교) | ✅ 완료 |
 | 4 | CRC-16 검증 (Byte 0~509 → Byte 510~511, poly=0x1021) | ✅ 완료 |
 | XMP | XMP 3.0 검증 (6000 이상 속도 코드 파트: CM/CQ/CR/CS) | ✅ 완료 |
+| Fix | FAIL 항목 자동 수정 (Save as _FIXED / Overwrite 2가지 모드) | ✅ 완료 |
 
 ### XMP 3.0 검증 항목 (Phase XMP 세부)
 
@@ -81,6 +82,7 @@ C:\JSH_Folder\SPD_Check_PGM\
     ├── Program.cs
     ├── MainForm.cs
     ├── Logic\SpdChecker.cs          ← 핵심 검증 로직
+    ├── Logic\SpdFixer.cs            ← FAIL 항목 자동 수정 로직
     └── Models\CheckResult.cs
 ```
 
@@ -92,6 +94,9 @@ C:\JSH_Folder\SPD_Check_PGM\
 - **타이밍 변환 공식:** `nCK = TRUNCATE((ps × 997 / tCK_ps + 1000) / 1000)`
 - **CL 보정:** CL만 홀수 결과 시 +1 (짝수 보정)
 - **타이밍 비교:** ps 단위 직접 비교, ±1ps 오차 허용
+- **Fix 로직:** CRC는 반드시 모든 바이트 수정 마지막에 재계산 (JEDEC CRC → XMP Global CRC → XMP Profile CRC 순)
+- **Module Density Fix 불가:** 단독 바이트 없음, Die Density/IO Width/Rank 3개 바이트에서 파생되므로 Fix 대상 제외
+- **internal 접근자:** SpdFixer.cs가 SpdChecker의 내부 타입(PartFields, SpeedSpec 등) 사용 — 동일 어셈블리 내 `internal` 선언 필수
 
 ---
 
