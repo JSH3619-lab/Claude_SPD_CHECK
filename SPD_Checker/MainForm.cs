@@ -54,6 +54,7 @@ namespace SPD_Checker
             ("",     "DRAM Mfr ID"),
             ("Ph.3", "DRAM Type"),
             ("",     "Module Type"),
+            ("",     "DIMM Type (XMP)"),
             ("",     "Die Density"),
             ("",     "I/O Width"),
             ("",     "Bank Groups"),
@@ -63,6 +64,13 @@ namespace SPD_Checker
             ("",     "Module Rank"),
             ("",     "Module Density"),
             ("Ph.4", "CRC"),
+            ("XMP",  "ID / Profiles / Global CRC"),
+            ("",     "P1: VPP / VDD / VDDQ"),
+            ("",     "P1: tCK / tAA / tRCD / tRP"),
+            ("",     "P1: CL Mask"),
+            ("",     "P1: Name String"),
+            ("",     "P1: CRC"),
+            ("",     "P2: (6000 제외 동일)"),
         };
 
         // ─────────────────────────────────────────────────────────────────────

@@ -190,6 +190,8 @@ namespace SPD_Checker.Logic
             {
                 results.Add(CheckDramType(fileName, data));
                 results.Add(CheckModuleType(fileName, fields, data));
+                if (fields.SpeedCode != null && XMP_SPEED_CODES.Contains(fields.SpeedCode))
+                    results.Add(CheckXmpDimmType(fileName, fields));
                 results.Add(CheckDieDensity(fileName, fields, data));
                 results.Add(CheckIoWidth(fileName, fields, data));
                 results.Add(CheckBankGroups(fileName, fields, data));
@@ -201,6 +203,10 @@ namespace SPD_Checker.Logic
 
             // ── Phase 4: CRC ─────────────────────────────────────────────────
             results.AddRange(CheckCrc(fileName, data));
+
+            // ── XMP 3.0 검증 (6000 이상 속도 코드 파트만) ────────────────────
+            if (fields.Valid && fields.SpeedCode != null && XMP_SPEED_CODES.Contains(fields.SpeedCode))
+                results.AddRange(CheckXmp(fileName, fields, data));
 
             return results;
         }
@@ -345,8 +351,10 @@ namespace SPD_Checker.Logic
         private static readonly Dictionary<char, byte> BANK_MAP =
             new Dictionary<char, byte>
             {
-                { '4', 0x42 },   // 16 Bank (4BG × 4B/BG)
-                { '5', 0x62 },   // 32 Bank (8BG × 4B/BG)
+                { '4', 0x42 },   // 16 Bank / POD 1.2V  (4BG × 4B/BG)
+                { '5', 0x62 },   // 32 Bank / POD 1.1V  (8BG × 4B/BG)
+                { '6', 0x62 },   // 32 Bank / POD 1.35V (8BG × 4B/BG)
+                { '7', 0x62 },   // 32 Bank / POD 1.4V  (8BG × 4B/BG)
             };
 
         private static readonly Dictionary<char, byte> RANK_MAP =
@@ -399,9 +407,13 @@ namespace SPD_Checker.Logic
                 { "CM", new SpeedSpec { Name="DDR5-6000", TckPs=333, TckAvgMin=0x014D, CL=34, TrcdNck=44, TrpNck=44 } },
                 { "CP", new SpeedSpec { Name="DDR5-6400", TckPs=312, TckAvgMin=0x0138, CL=52, TrcdNck=52, TrpNck=52 } },
                 { "CQ", new SpeedSpec { Name="DDR5-6400", TckPs=312, TckAvgMin=0x0138, CL=36, TrcdNck=44, TrpNck=44 } },
-                { "CR", new SpeedSpec { Name="DDR5-6800", TckPs=294, TckAvgMin=0x0126, CL=44, TrcdNck=44, TrpNck=44 } },
+                { "CR", new SpeedSpec { Name="DDR5-6800", TckPs=294, TckAvgMin=0x0126, CL=36, TrcdNck=44, TrpNck=44 } },
                 { "CS", new SpeedSpec { Name="DDR5-7200", TckPs=277, TckAvgMin=0x0115, CL=38, TrcdNck=46, TrpNck=46 } },
             };
+
+        // XMP 속도 코드 (6000 이상) — JEDEC SPD는 WM(5600) 기준으로 검증
+        private static readonly HashSet<string> XMP_SPEED_CODES =
+            new HashSet<string>(StringComparer.Ordinal) { "CM", "CQ", "CR", "CS" };
 
         // ── Phase 3: Part Number Field Parser ────────────────────────────────
         private struct PartFields
@@ -630,16 +642,22 @@ namespace SPD_Checker.Logic
                 yield break;
             }
 
-            SpeedSpec spec = SPEED_MAP[f.SpeedCode];
+            SpeedSpec spec     = SPEED_MAP[f.SpeedCode];
+            // 6000 이상 XMP 파트의 JEDEC SPD 영역은 WM(5600) 타이밍으로 기록됨
+            SpeedSpec jedecSpec = XMP_SPEED_CODES.Contains(f.SpeedCode) ? SPEED_MAP["WM"] : spec;
+            bool      isXmp     = jedecSpec.Name != spec.Name;
 
             // tCKAVGmin (Bytes 20~21, Little-Endian)
             int  actualTck = data[TCK_AVG_MIN_OFFSET] | (data[TCK_AVG_MIN_OFFSET + 1] << 8);
-            bool passTck   = actualTck == spec.TckAvgMin;
+            bool passTck   = actualTck == jedecSpec.TckAvgMin;
+            string tckExpected = isXmp
+                ? $"0x{jedecSpec.TckAvgMin:X4} ({jedecSpec.Name}/JEDEC, tCK={jedecSpec.TckPs}ps)"
+                : $"0x{jedecSpec.TckAvgMin:X4} ({jedecSpec.Name}, tCK={jedecSpec.TckPs}ps)";
             yield return new CheckResult
             {
                 FileName  = fileName,
                 CheckItem = "tCKAVGmin",
-                Expected  = $"0x{spec.TckAvgMin:X4} ({spec.Name}, tCK={spec.TckPs}ps)",
+                Expected  = tckExpected,
                 Actual    = $"0x{actualTck:X4}",
                 Pass      = passTck,
                 Status    = passTck ? CheckStatus.Pass : CheckStatus.Fail,
@@ -647,7 +665,7 @@ namespace SPD_Checker.Logic
             };
 
             // SPD 실측 tCK 사용 (0이면 나누기 방지)
-            int tckPs = actualTck > 0 ? actualTck : spec.TckPs;
+            int tckPs = actualTck > 0 ? actualTck : jedecSpec.TckPs;
 
             // JEDEC 공식: nCK = TRUNCATE((timing_ps × 997 / tCK_ps + 1000) / 1000)
             int actualTaa    = data[TAA_MIN_OFFSET]   | (data[TAA_MIN_OFFSET   + 1] << 8);
@@ -659,15 +677,15 @@ namespace SPD_Checker.Logic
             int nckTrcd = (int)Math.Truncate((actualTrcd * 997.0 / tckPs + 1000.0) / 1000.0);
             int nckTrp  = (int)Math.Truncate((actualTrp  * 997.0 / tckPs + 1000.0) / 1000.0);
 
-            bool passTaa  = nckTaa  == spec.CL;
-            bool passTrcd = nckTrcd == spec.TrcdNck;
-            bool passTrp  = nckTrp  == spec.TrpNck;
+            bool passTaa  = nckTaa  == jedecSpec.CL;
+            bool passTrcd = nckTrcd == jedecSpec.TrcdNck;
+            bool passTrp  = nckTrp  == jedecSpec.TrpNck;
 
             yield return new CheckResult
             {
                 FileName  = fileName,
                 CheckItem = "tAA min",
-                Expected  = $"CL{spec.CL}",
+                Expected  = $"CL{jedecSpec.CL}",
                 Actual    = $"{actualTaa} ps → CL{nckTaa}",
                 Pass      = passTaa,
                 Status    = passTaa ? CheckStatus.Pass : CheckStatus.Fail,
@@ -678,7 +696,7 @@ namespace SPD_Checker.Logic
             {
                 FileName  = fileName,
                 CheckItem = "tRCD min",
-                Expected  = $"{spec.TrcdNck} nCK",
+                Expected  = $"{jedecSpec.TrcdNck} nCK",
                 Actual    = $"{actualTrcd} ps → {nckTrcd} nCK",
                 Pass      = passTrcd,
                 Status    = passTrcd ? CheckStatus.Pass : CheckStatus.Fail,
@@ -689,7 +707,7 @@ namespace SPD_Checker.Logic
             {
                 FileName  = fileName,
                 CheckItem = "tRP min",
-                Expected  = $"{spec.TrpNck} nCK",
+                Expected  = $"{jedecSpec.TrpNck} nCK",
                 Actual    = $"{actualTrp} ps → {nckTrp} nCK",
                 Pass      = passTrp,
                 Status    = passTrp ? CheckStatus.Pass : CheckStatus.Fail,
@@ -783,6 +801,39 @@ namespace SPD_Checker.Logic
         // JESD400-5C §7 Address Map: Byte 0~509 → CRC at Byte 510(LSB) 511(MSB)
         private const int CRC_OFFSET = 510;   // 0x1FE
 
+        // ── XMP 3.0: Byte 상수 (JEDEC DDR5 End User Bytes 640~1023) ──────────
+        private const int XMP_GLOBAL_BASE    = 640;   // 0x280
+        private const int XMP_P1_BASE        = 704;   // 0x2C0
+        private const int XMP_P2_BASE        = 768;   // 0x300
+        private const int XMP_MIN_SIZE       = 832;   // Profile 2 CRC(Byte 831)까지 필요
+        private const int XMP_P1_NAME_OFFSET = 654;   // Global 내 Profile 1 Name (16 bytes)
+        private const int XMP_P2_NAME_OFFSET = 670;   // Global 내 Profile 2 Name (16 bytes)
+
+        // Profile 2 기준 Speed 코드 (CM은 키 없음 → Skip)
+        private static readonly Dictionary<string, string> XMP_P2_SPEED =
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                { "CQ", "CM" },
+                { "CR", "CQ" },
+                { "CS", "CR" },
+            };
+
+        // Bank/VDD 코드 → XMP VDD/VDDQ 기대 Hex
+        private static readonly Dictionary<char, (byte Vdd, byte Vddq)> BANK_VDD_XMP_MAP =
+            new Dictionary<char, (byte, byte)>
+            {
+                { '5', (0x22, 0x22) },   // 1.1V / 1.1V
+                { '6', (0x27, 0x27) },   // 1.35V / 1.35V
+                { '7', (0x28, 0x28) },   // 1.4V / 1.4V
+            };
+
+        // Speed 코드 → Bank 코드 (Profile 2 VDD 산출용)
+        private static readonly Dictionary<string, char> SPEED_TO_BANK_CODE =
+            new Dictionary<string, char>(StringComparer.Ordinal)
+            {
+                { "WM", '5' }, { "CM", '6' }, { "CQ", '6' }, { "CR", '7' }, { "CS", '7' },
+            };
+
         private static ushort ComputeCrc16(byte[] data, int offset, int length)
         {
             ushort crc = 0x0000;
@@ -827,6 +878,368 @@ namespace SPD_Checker.Logic
                 Pass      = pass,
                 Status    = pass ? CheckStatus.Pass : CheckStatus.Fail,
                 Note      = "Byte 510~511 (0x1FE~0x1FF) | CRC-16 poly=0x1021 over Byte 0~509"
+            };
+        }
+
+        // ── XMP 파트 DIMM Type 검증 ───────────────────────────────────────────
+        // XMP High Speed(6000 이상) 파트는 파일명 DIMM Type이 반드시 'G' 이어야 함
+        private static CheckResult CheckXmpDimmType(string fileName, PartFields fields)
+        {
+            bool pass = fields.DimmType == 'G';
+            return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = "DIMM Type (XMP)",
+                Expected  = "G (Gaming UDIMM)",
+                Actual    = fields.DimmType.ToString(),
+                Pass      = pass,
+                Status    = pass ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = "XMP High Speed 파트는 파일명 DIMM Type이 'G' 이어야 함"
+            };
+        }
+
+        // ── XMP 3.0: nCK 변환 (XMP 스펙 공식, 결과는 JEDEC와 동일) ─────────
+        private static int CalcNckXmp(int timingPs, int tckPs) =>
+            (int)Math.Truncate((timingPs * 1000.0 / tckPs + 998.0) / 1000.0);
+
+        // ── XMP 3.0: 진입점 ───────────────────────────────────────────────────
+        private static IEnumerable<CheckResult> CheckXmp(
+            string fileName, PartFields fields, byte[] data)
+        {
+            if (data.Length < XMP_MIN_SIZE)
+            {
+                yield return new CheckResult
+                {
+                    FileName  = fileName,
+                    CheckItem = "[XMP] File Size",
+                    Expected  = $">= {XMP_MIN_SIZE} bytes",
+                    Actual    = $"{data.Length} bytes",
+                    Pass      = false,
+                    Status    = CheckStatus.Fail,
+                    Note      = "XMP 검사 불가 — 파일 크기 부족"
+                };
+                yield break;
+            }
+
+            // [1] XMP ID (Byte 640/641/642)
+            bool idOk = data[640] == 0x0C && data[641] == 0x4A && data[642] == 0x30;
+            yield return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = "[XMP] ID",
+                Expected  = "0x0C / 0x4A / 0x30",
+                Actual    = $"0x{data[640]:X2} / 0x{data[641]:X2} / 0x{data[642]:X2}",
+                Pass      = idOk,
+                Status    = idOk ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = "Byte 640~642 (0x280~0x282)"
+            };
+            if (!idOk) yield break;
+
+            // [2] Profiles Enabled (Byte 643)
+            // CM → 0x01 (P1만), CQ/CR/CS → 0x03 (P1+P2)
+            byte expEnabled = fields.SpeedCode == "CM" ? (byte)0x01 : (byte)0x03;
+            byte actEnabled = data[643];
+            bool passEnabled = actEnabled == expEnabled;
+            yield return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = "[XMP] Profiles Enabled",
+                Expected  = $"0x{expEnabled:X2}",
+                Actual    = $"0x{actEnabled:X2}",
+                Pass      = passEnabled,
+                Status    = passEnabled ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = "Byte 643 (0x283) | bit0=P1 bit1=P2"
+            };
+
+            // [3] Global Section CRC (Byte 640~701 → 702~703)
+            ushort calcGlobal   = ComputeCrc16(data, XMP_GLOBAL_BASE, 62);
+            ushort storedGlobal = (ushort)(data[702] | (data[703] << 8));
+            bool   passGCrc     = calcGlobal == storedGlobal;
+            yield return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = "[XMP] Global CRC",
+                Expected  = $"0x{calcGlobal:X4}",
+                Actual    = $"0x{storedGlobal:X4}",
+                Pass      = passGCrc,
+                Status    = passGCrc ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = "Byte 702~703 (0x2BE~0x2BF) | CRC-16 over Byte 640~701"
+            };
+
+            // [4~12] Profile 1
+            foreach (var r in CheckXmpProfile(
+                fileName, fields.SpeedCode, fields.BankCode,
+                XMP_P1_BASE, XMP_P1_NAME_OFFSET, data, 1))
+                yield return r;
+
+            // [13~21] Profile 2 (CM은 Skip)
+            if (XMP_P2_SPEED.TryGetValue(fields.SpeedCode, out string p2Code))
+            {
+                char p2Bank = SPEED_TO_BANK_CODE.TryGetValue(p2Code, out char b) ? b : '6';
+                foreach (var r in CheckXmpProfile(
+                    fileName, p2Code, p2Bank,
+                    XMP_P2_BASE, XMP_P2_NAME_OFFSET, data, 2))
+                    yield return r;
+            }
+        }
+
+        // ── XMP 3.0: Profile 검증 (P1/P2 공통) ───────────────────────────────
+        private static IEnumerable<CheckResult> CheckXmpProfile(
+            string fileName, string speedCode, char bankCode,
+            int baseOffset, int nameOffset, byte[] data, int profileNum)
+        {
+            SpeedSpec spec   = SPEED_MAP[speedCode];
+            string    prefix = $"[XMP] P{profileNum}";
+
+            // VPP (BASE+0): 0x30 = 1.8V 고정
+            const byte VPP_EXP = 0x30;
+            byte vppAct  = data[baseOffset];
+            bool vppPass = vppAct == VPP_EXP;
+            yield return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = $"{prefix} VPP",
+                Expected  = $"0x{VPP_EXP:X2} (1.8V)",
+                Actual    = $"0x{vppAct:X2}",
+                Pass      = vppPass,
+                Status    = vppPass ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = $"Byte {baseOffset} (BASE+0)"
+            };
+
+            // VDD (BASE+1) / VDDQ (BASE+2)
+            BANK_VDD_XMP_MAP.TryGetValue(bankCode, out var vddPair);
+            byte expVdd  = vddPair.Vdd;
+            byte expVddq = vddPair.Vddq;
+
+            byte vddAct  = data[baseOffset + 1];
+            bool vddPass = vddAct == expVdd;
+            yield return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = $"{prefix} VDD",
+                Expected  = $"0x{expVdd:X2} (BankCode='{bankCode}')",
+                Actual    = $"0x{vddAct:X2}",
+                Pass      = vddPass,
+                Status    = vddPass ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = $"Byte {baseOffset + 1} (BASE+1)"
+            };
+
+            byte vddqAct  = data[baseOffset + 2];
+            bool vddqPass = vddqAct == expVddq;
+            yield return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = $"{prefix} VDDQ",
+                Expected  = $"0x{expVddq:X2} (BankCode='{bankCode}')",
+                Actual    = $"0x{vddqAct:X2}",
+                Pass      = vddqPass,
+                Status    = vddqPass ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = $"Byte {baseOffset + 2} (BASE+2)"
+            };
+
+            // tCKAVGmin (BASE+5~6 LE)
+            int  actTck  = data[baseOffset + 5] | (data[baseOffset + 6] << 8);
+            bool passTck = actTck == spec.TckAvgMin;
+            yield return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = $"{prefix} tCKAVGmin",
+                Expected  = $"0x{spec.TckAvgMin:X4} ({spec.Name}, tCK={spec.TckPs}ps)",
+                Actual    = $"0x{actTck:X4}",
+                Pass      = passTck,
+                Status    = passTck ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = $"Byte {baseOffset + 5}~{baseOffset + 6} (BASE+5~6)"
+            };
+
+            int tckPs = actTck > 0 ? actTck : spec.TckPs;
+
+            // tAAmin (BASE+13~14 LE): CL × tCK_ps ±1ps
+            int actTaa  = data[baseOffset + 13] | (data[baseOffset + 14] << 8);
+            int expTaa  = spec.CL * spec.TckPs;
+            bool passTaa = Math.Abs(actTaa - expTaa) <= 1;
+            int nckTaa  = CalcNckXmp(actTaa, tckPs);
+            yield return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = $"{prefix} tAAmin",
+                Expected  = $"CL{spec.CL} = {expTaa} ps",
+                Actual    = $"{actTaa} ps → CL{nckTaa}",
+                Pass      = passTaa,
+                Status    = passTaa ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = $"Byte {baseOffset + 13}~{baseOffset + 14} (BASE+13~14)"
+            };
+
+            // tRCDmin (BASE+15~16 LE)
+            int actTrcd  = data[baseOffset + 15] | (data[baseOffset + 16] << 8);
+            int expTrcd  = spec.TrcdNck * spec.TckPs;
+            bool passTrcd = Math.Abs(actTrcd - expTrcd) <= 1;
+            int nckTrcd  = CalcNckXmp(actTrcd, tckPs);
+            yield return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = $"{prefix} tRCDmin",
+                Expected  = $"{spec.TrcdNck} nCK = {expTrcd} ps",
+                Actual    = $"{actTrcd} ps → {nckTrcd} nCK",
+                Pass      = passTrcd,
+                Status    = passTrcd ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = $"Byte {baseOffset + 15}~{baseOffset + 16} (BASE+15~16)"
+            };
+
+            // tRPmin (BASE+17~18 LE)
+            int actTrp  = data[baseOffset + 17] | (data[baseOffset + 18] << 8);
+            int expTrp  = spec.TrpNck * spec.TckPs;
+            bool passTrp = Math.Abs(actTrp - expTrp) <= 1;
+            int nckTrp  = CalcNckXmp(actTrp, tckPs);
+            yield return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = $"{prefix} tRPmin",
+                Expected  = $"{spec.TrpNck} nCK = {expTrp} ps",
+                Actual    = $"{actTrp} ps → {nckTrp} nCK",
+                Pass      = passTrp,
+                Status    = passTrp ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = $"Byte {baseOffset + 17}~{baseOffset + 18} (BASE+17~18)"
+            };
+
+            // CL Mask (BASE+7~11): 목표 CL 비트 SET 확인
+            // 인코딩: byte_offset=(CL-20)/16, bit_pos=((CL-20)%16)/2
+            int  clByteIdx = (spec.CL - 20) / 16;
+            int  clBitPos  = ((spec.CL - 20) % 16) / 2;
+            byte clMask    = (byte)(1 << clBitPos);
+            byte clByte    = data[baseOffset + 7 + clByteIdx];
+            bool passCl    = (clByte & clMask) != 0;
+            int  clAbsByte = baseOffset + 7 + clByteIdx;
+            yield return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = $"{prefix} CL Mask",
+                Expected  = $"CL{spec.CL} SET (bit{clBitPos}=1, mask=0x{clMask:X2})",
+                Actual    = $"0x{clByte:X2} → CL{spec.CL} {(passCl ? "SET ✓" : "CLEAR ✗")}",
+                Pass      = passCl,
+                Status    = passCl ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = $"Byte {clAbsByte} (BASE+{7 + clByteIdx})"
+            };
+
+            // Name String 교차 검증
+            foreach (var r in CheckXmpNameString(fileName, prefix, baseOffset, nameOffset, data))
+                yield return r;
+
+            // Profile CRC (BASE+62~63 LE, 계산범위 BASE~BASE+61)
+            ushort calcCrc   = ComputeCrc16(data, baseOffset, 62);
+            ushort storedCrc = (ushort)(data[baseOffset + 62] | (data[baseOffset + 63] << 8));
+            bool   passCrc   = calcCrc == storedCrc;
+            yield return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = $"{prefix} CRC",
+                Expected  = $"0x{calcCrc:X4}",
+                Actual    = $"0x{storedCrc:X4}",
+                Pass      = passCrc,
+                Status    = passCrc ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = $"Byte {baseOffset + 62}~{baseOffset + 63} | CRC-16 over Byte {baseOffset}~{baseOffset + 61}"
+            };
+        }
+
+        // ── XMP 3.0: Name String 교차 검증 ────────────────────────────────────
+        // 형식: "RM-[DataRate]-[CL]-[tRCD]-[tRAS]"  예: "RM-6000-34-44-84"
+        private static IEnumerable<CheckResult> CheckXmpNameString(
+            string fileName, string prefix, int baseOffset, int nameOffset, byte[] data)
+        {
+            string nameRaw = Encoding.ASCII.GetString(data, nameOffset, 16).TrimEnd(' ', '\0');
+            string[] parts = nameRaw.Split('-');
+
+            // ① Brand = "RM"
+            string brand     = parts.Length > 0 ? parts[0] : "";
+            bool   brandPass = brand == "RM";
+            yield return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = $"{prefix} Name Brand",
+                Expected  = "RM",
+                Actual    = brand,
+                Pass      = brandPass,
+                Status    = brandPass ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = $"Name String: '{nameRaw}'"
+            };
+
+            if (parts.Length < 5 ||
+                !int.TryParse(parts[1], out int dataRate) || dataRate <= 0 ||
+                !int.TryParse(parts[2], out int clFromName) ||
+                !int.TryParse(parts[3], out int trcdFromName) ||
+                !int.TryParse(parts[4], out int trasFromName))
+            {
+                yield return new CheckResult
+                {
+                    FileName  = fileName,
+                    CheckItem = $"{prefix} Name Timings",
+                    Expected  = "RM-[DataRate]-[CL]-[tRCD]-[tRAS]",
+                    Actual    = nameRaw,
+                    Pass      = false,
+                    Status    = CheckStatus.Fail,
+                    Note      = "Name String 형식 오류 또는 숫자 파싱 실패"
+                };
+                yield break;
+            }
+
+            int tckFromName = 2_000_000 / dataRate;   // truncate
+
+            // ② DataRate → tCK vs 실제 tCKAVGmin (BASE+5~6)
+            int  actTck     = data[baseOffset + 5] | (data[baseOffset + 6] << 8);
+            bool passTckN   = Math.Abs(tckFromName - actTck) <= 1;
+            yield return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = $"{prefix} Name tCK",
+                Expected  = $"{tckFromName} ps (2000000÷{dataRate})",
+                Actual    = $"{actTck} ps",
+                Pass      = passTckN,
+                Status    = passTckN ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = $"Byte {baseOffset + 5}~{baseOffset + 6} (BASE+5~6)"
+            };
+
+            // ③ CL × tCK vs 실제 tAAmin (BASE+13~14)
+            int  taaFromName = clFromName * tckFromName;
+            int  actTaa      = data[baseOffset + 13] | (data[baseOffset + 14] << 8);
+            bool passTaaN    = Math.Abs(taaFromName - actTaa) <= 1;
+            yield return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = $"{prefix} Name tAA",
+                Expected  = $"{clFromName}×{tckFromName}={taaFromName} ps",
+                Actual    = $"{actTaa} ps",
+                Pass      = passTaaN,
+                Status    = passTaaN ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = $"Byte {baseOffset + 13}~{baseOffset + 14} (BASE+13~14)"
+            };
+
+            // ④ tRCD × tCK vs 실제 tRCDmin (BASE+15~16)
+            int  trcdFromName2 = trcdFromName * tckFromName;
+            int  actTrcd       = data[baseOffset + 15] | (data[baseOffset + 16] << 8);
+            bool passTrcdN     = Math.Abs(trcdFromName2 - actTrcd) <= 1;
+            yield return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = $"{prefix} Name tRCD",
+                Expected  = $"{trcdFromName}×{tckFromName}={trcdFromName2} ps",
+                Actual    = $"{actTrcd} ps",
+                Pass      = passTrcdN,
+                Status    = passTrcdN ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = $"Byte {baseOffset + 15}~{baseOffset + 16} (BASE+15~16)"
+            };
+
+            // ⑤ tRAS × tCK vs 실제 tRASmin (BASE+19~20)
+            int  trasCalc  = trasFromName * tckFromName;
+            int  actTras   = data[baseOffset + 19] | (data[baseOffset + 20] << 8);
+            bool passTrasN = Math.Abs(trasCalc - actTras) <= 1;
+            yield return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = $"{prefix} Name tRAS",
+                Expected  = $"{trasFromName}×{tckFromName}={trasCalc} ps",
+                Actual    = $"{actTras} ps",
+                Pass      = passTrasN,
+                Status    = passTrasN ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = $"Byte {baseOffset + 19}~{baseOffset + 20} (BASE+19~20)"
             };
         }
 
