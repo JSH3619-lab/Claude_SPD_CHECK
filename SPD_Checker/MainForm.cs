@@ -704,8 +704,7 @@ namespace SPD_Checker
                 if (path == null) { errors.Add(name + ": 경로 없음"); continue; }
                 try
                 {
-                    string text    = File.ReadAllText(path);
-                    byte[] data    = SpdChecker.ParseSpdText(text);
+                    byte[] data      = SpdChecker.ParseSpdText(path);
                     byte[] fixedData = SpdFixer.ApplyFixes(data, path);
                     if (overwrite)
                         SpdFixer.SaveOverwrite(path, fixedData);
