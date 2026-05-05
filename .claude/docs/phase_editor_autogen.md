@@ -13,8 +13,8 @@
 | E-2  | SpdEditorForm 골격 (Hex Grid + Part Info + Key Bytes) | ✅ 완료 |
 | E-2.5 | Key Byte 툴팁 / 행 헤더 hex / 그룹화 + 의미 디코딩 | ✅ 완료 |
 | E-3  | CRC 일괄 재계산 + 실시간 검증 ✅/❌ + 셀 색상 | ✅ 완료 |
-| **E-4**  | **Auto-Fix 통합 (구 SpdFixer)** | 🔄 **다음** |
-| E-5  | Save / Load (.sp5 / .bin) + dirty 추적 마무리 | ⏳ |
+| E-4  | Auto-Fix 통합 (구 SpdFixer) | ✅ 완료 |
+| **E-5**  | **Save / Load (.sp5 / .bin) + dirty 추적 마무리** | 🔄 **다음** |
 | E-6  | AutoGenForm + SpdAutoGen 로직 | ⏳ |
 | E-7  | 모드 전환 [Mode ▾] 드롭다운 + FAIL 더블클릭 점프 | ⏳ |
 | E-3.5 | (보류) Part Info Form 입력 → byte 역계산 | 후순위 |

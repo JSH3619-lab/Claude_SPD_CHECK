@@ -170,19 +170,21 @@ namespace SPD_Checker.Forms
             var toolbar = new Panel { Dock = DockStyle.Top, Height = 46, BackColor = Color.FromArgb(245, 246, 248) };
             toolbar.Padding = new Padding(10, 7, 10, 7);
 
-            var btnLoad   = MakeToolBtn("📂  Load File", Color.FromArgb(65, 125, 190),  0,   120);
-            var btnNew    = MakeToolBtn("🆕  New",       Color.FromArgb(108, 117, 125), 130, 90);
-            var btnSave   = MakeToolBtn("💾  Save",      Color.FromArgb(34, 153, 60),   230, 90);
-            var btnSaveAs = MakeToolBtn("Save As",       Color.FromArgb(20, 155, 175),  330, 90);
-            var btnCrc    = MakeToolBtn("🔄  CRC 재계산", Color.FromArgb(170, 70, 20),   440, 140);
+            var btnLoad    = MakeToolBtn("📂  Load File", Color.FromArgb(65, 125, 190),   0,   120);
+            var btnNew     = MakeToolBtn("🆕  New",       Color.FromArgb(108, 117, 125), 130, 90);
+            var btnSave    = MakeToolBtn("💾  Save",      Color.FromArgb(34, 153, 60),   230, 90);
+            var btnSaveAs  = MakeToolBtn("Save As",       Color.FromArgb(20, 155, 175),  330, 90);
+            var btnCrc     = MakeToolBtn("🔄  CRC 재계산", Color.FromArgb(170, 70, 20),   440, 140);
+            var btnAutoFix = MakeToolBtn("🔧  자동 수정",  Color.FromArgb(120, 40, 170),  590, 130);
 
-            btnLoad.Click   += (s, e) => LoadFileDialog();
-            btnNew.Click    += (s, e) => NewFile();
-            btnSave.Click   += (s, e) => ShowComingSoon("Save 기능은 E-5 단계에서 구현됩니다.");
-            btnSaveAs.Click += (s, e) => ShowComingSoon("Save As 기능은 E-5 단계에서 구현됩니다.");
-            btnCrc.Click    += (s, e) => RecalculateCrcs();
+            btnLoad.Click    += (s, e) => LoadFileDialog();
+            btnNew.Click     += (s, e) => NewFile();
+            btnSave.Click    += (s, e) => ShowComingSoon("Save 기능은 E-5 단계에서 구현됩니다.");
+            btnSaveAs.Click  += (s, e) => ShowComingSoon("Save As 기능은 E-5 단계에서 구현됩니다.");
+            btnCrc.Click     += (s, e) => RecalculateCrcs();
+            btnAutoFix.Click += (s, e) => AutoFix();
 
-            toolbar.Controls.AddRange(new Control[] { btnLoad, btnNew, btnSave, btnSaveAs, btnCrc });
+            toolbar.Controls.AddRange(new Control[] { btnLoad, btnNew, btnSave, btnSaveAs, btnCrc, btnAutoFix });
             return toolbar;
         }
 
@@ -468,6 +470,53 @@ namespace SPD_Checker.Forms
                            : "⊘ ";
                 }
                 sb.AppendLine($"  {status} {addr,-9} {raw,-11} {g.Name,-15} {meaning}");
+            }
+        }
+
+        // ── Auto-Fix ─────────────────────────────────────────────────────────
+        private void AutoFix()
+        {
+            string partNo = SpdParser.StripSuffix((_info?.PartNumberAscii ?? "").Trim());
+            if (string.IsNullOrEmpty(partNo))
+            {
+                MessageBox.Show(this,
+                    "Part Number가 없습니다.\nByte 521~550 (0x209~0x226)에 Part Number를 먼저 입력하세요.",
+                    "Auto-Fix", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            // SpdFixer는 filePath에서 Part Number를 파싱 — 가상 경로로 전달
+            string dir         = _filePath != null ? Path.GetDirectoryName(_filePath) ?? "" : "";
+            string virtualPath = Path.Combine(dir, partNo + ".sp5");
+
+            try
+            {
+                byte[] fixedData = SpdFixer.ApplyFixes(_data, virtualPath);
+
+                int changed = 0;
+                for (int i = 0; i < _data.Length && i < fixedData.Length; i++)
+                    if (_data[i] != fixedData[i]) changed++;
+
+                if (changed == 0)
+                {
+                    MessageBox.Show(this, "수정할 항목이 없습니다. 모든 바이트가 이미 정상입니다.",
+                        "Auto-Fix", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                Array.Copy(fixedData, _data, Math.Min(fixedData.Length, _data.Length));
+                _dirty = true;
+                SyncGridFromData();
+                RefreshDisplay();
+
+                MessageBox.Show(this,
+                    $"Auto-Fix 완료: {changed}개 바이트 수정됨.\n저장은 [💾 Save] 버튼으로 확정하세요.",
+                    "Auto-Fix", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Auto-Fix 실패:\n{ex.Message}",
+                    "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
