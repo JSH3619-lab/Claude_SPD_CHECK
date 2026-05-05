@@ -29,7 +29,7 @@ namespace SPD_Checker.Forms
         private Label        _rightInfoLabel;
         private Label        _statusLabel;
 
-        public bool SwitchRequested { get; private set; }
+        public AppMode? NextMode { get; private set; }
 
         // ── Key Byte 그룹 (관련 바이트 묶기 + 의미 디코딩) ──────────────────
         private struct KeyByteGroup
@@ -64,10 +64,40 @@ namespace SPD_Checker.Forms
             new KeyByteGroup { Offset = 830, Length = 2, Name = "XMP P2 CRC",     CheckItem = "[XMP] P2 CRC",           Decode = DecCrcLE       },
         };
 
-        public SpdEditorForm()
+        public SpdEditorForm() : this(null, null) { }
+
+        public SpdEditorForm(string loadPath, int? scrollToOffset)
         {
             BuildUI();
-            NewFile();
+            if (!string.IsNullOrEmpty(loadPath) && File.Exists(loadPath))
+            {
+                LoadFile(loadPath);
+                if (scrollToOffset.HasValue) ScrollToOffset(scrollToOffset.Value);
+            }
+            else
+            {
+                NewFile();
+            }
+        }
+
+        private void ScrollToOffset(int offset)
+        {
+            if (offset < 0 || offset >= SPD_SIZE) return;
+            int row = offset / COLS;
+            int col = offset % COLS;
+            _hexGrid.FirstDisplayedScrollingRowIndex = Math.Max(0, row - 4);
+            _hexGrid.ClearSelection();
+            _hexGrid.CurrentCell = _hexGrid[col, row];
+            _hexGrid[col, row].Selected = true;
+        }
+
+        // CheckItem 이름 → 해당 byte offset (없으면 null). MainForm DetailForm 점프용.
+        public static int? FindOffsetByCheckItem(string checkItem)
+        {
+            if (string.IsNullOrEmpty(checkItem)) return null;
+            foreach (var g in KEY_BYTE_GROUPS)
+                if (g.CheckItem == checkItem) return g.Offset;
+            return null;
         }
 
         // ── UI Construction ──────────────────────────────────────────────────
@@ -141,27 +171,12 @@ namespace SPD_Checker.Forms
                 TextAlign = ContentAlignment.MiddleLeft,
                 Padding   = new Padding(15, 0, 0, 0)
             };
-            var btnSwitchMode = new Button
-            {
-                Text      = "← 모드 선택",
-                Dock      = DockStyle.Right,
-                Width     = 110,
-                Font      = new Font("Segoe UI", 9F, FontStyle.Bold),
-                ForeColor = Color.White,
-                BackColor = Color.FromArgb(50, 80, 120),
-                FlatStyle = FlatStyle.Flat,
-                Cursor    = Cursors.Hand,
-                TabStop   = false
-            };
-            btnSwitchMode.FlatAppearance.BorderSize = 0;
-            btnSwitchMode.Click += (s, e) =>
-            {
-                if (!ConfirmDirtyDiscard()) return;
-                SwitchRequested = true;
-                Close();
-            };
+            var btnMode = ModeDropdown.Create(
+                AppMode.Editor,
+                m => { NextMode = m; Close(); },
+                ConfirmDirtyDiscard);
             header.Controls.Add(lblTitle);
-            header.Controls.Add(btnSwitchMode);
+            header.Controls.Add(btnMode);
             return header;
         }
 

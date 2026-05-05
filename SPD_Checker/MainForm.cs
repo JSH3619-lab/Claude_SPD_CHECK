@@ -7,6 +7,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
+using SPD_Checker.Forms;
 using SPD_Checker.Logic;
 using SPD_Checker.Models;
 
@@ -43,7 +44,9 @@ namespace SPD_Checker
         private int _fileSkip;
 
         // ── Mode Switch ──────────────────────────────────────────────────────
-        public bool SwitchRequested { get; private set; }
+        public AppMode? NextMode     { get; private set; }
+        public string   JumpFilePath { get; private set; }
+        public int?     JumpOffset   { get; private set; }
 
         private bool _showPass = true;
         private bool _showFail = true;
@@ -102,28 +105,11 @@ namespace SPD_Checker
                                    new Font("Segoe UI", 8F), Color.FromArgb(170, 195, 220),
                                    DockStyle.Right, ContentAlignment.MiddleCenter);
             lblVer.Width = 140;
-            // Mode switch button (rightmost in header)
-            var btnSwitchMode = new Button
-            {
-                Text      = "← 모드 선택",
-                Dock      = DockStyle.Right,
-                Width     = 110,
-                Font      = new Font("Segoe UI", 9F, FontStyle.Bold),
-                ForeColor = Color.White,
-                BackColor = Color.FromArgb(50, 80, 120),
-                FlatStyle = FlatStyle.Flat,
-                Cursor    = Cursors.Hand,
-                TabStop   = false
-            };
-            btnSwitchMode.FlatAppearance.BorderSize = 0;
-            btnSwitchMode.Click += (s, e) =>
-            {
-                SwitchRequested = true;
-                Close();
-            };
+            var btnMode = ModeDropdown.Create(AppMode.Check,
+                m => { NextMode = m; Close(); });
 
             pnlHeader.Controls.Add(lblTitle);
-            pnlHeader.Controls.Add(btnSwitchMode);
+            pnlHeader.Controls.Add(btnMode);
             pnlHeader.Controls.Add(lblVer);
 
             // Drop Zone
@@ -749,16 +735,11 @@ namespace SPD_Checker
             }
         }
 
-        // ── Double-click Detail ───────────────────────────────────────────────
+        // ── Double-click / Enter → Detail ─────────────────────────────────────
         private void DgvResults_CellDoubleClick(object sender, DataGridViewCellEventArgs e)
         {
             if (e.RowIndex < 0) return;
-            string fileName = dgvResults.Rows[e.RowIndex].Cells["colFile"].Value?.ToString();
-            string result   = dgvResults.Rows[e.RowIndex].Cells["colResult"].Value?.ToString();
-            if (result == "SKIP" || fileName == null) return;
-            if (!_fileResults.TryGetValue(fileName, out var results)) return;
-            using (var dlg = new DetailForm(fileName, results))
-                dlg.ShowDialog(this);
+            OpenDetailForRow(e.RowIndex);
         }
 
         private void DgvResults_KeyDown(object sender, KeyEventArgs e)
@@ -767,13 +748,28 @@ namespace SPD_Checker
             e.Handled        = true;
             e.SuppressKeyPress = true;
             if (dgvResults.CurrentRow == null) return;
-            int    rowIdx  = dgvResults.CurrentRow.Index;
+            OpenDetailForRow(dgvResults.CurrentRow.Index);
+        }
+
+        private void OpenDetailForRow(int rowIdx)
+        {
             string fileName = dgvResults.Rows[rowIdx].Cells["colFile"].Value?.ToString();
             string result   = dgvResults.Rows[rowIdx].Cells["colResult"].Value?.ToString();
             if (result == "SKIP" || fileName == null) return;
             if (!_fileResults.TryGetValue(fileName, out var results)) return;
+
             using (var dlg = new DetailForm(fileName, results))
-                dlg.ShowDialog(this);
+            {
+                if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                // "Editor에서 열기" 클릭 → 모드 전환 + 파일 점프
+                string fullPath = _files.FirstOrDefault(p =>
+                    string.Equals(Path.GetFileName(p), fileName, StringComparison.OrdinalIgnoreCase));
+                if (fullPath == null) return;
+                NextMode     = AppMode.Editor;
+                JumpFilePath = fullPath;
+                JumpOffset   = dlg.JumpOffset;
+                Close();
+            }
         }
 
         private void DgvResults_CellToolTipTextNeeded(object sender, DataGridViewCellToolTipTextNeededEventArgs e)
@@ -790,6 +786,8 @@ namespace SPD_Checker
         // ── Detail Dialog ─────────────────────────────────────────────────────
         private class DetailForm : Form
         {
+            public int? JumpOffset { get; private set; }   // "Editor에서 열기" 클릭 시 첫 FAIL byte 위치
+
             public DetailForm(string fileName, List<CheckResult> results)
             {
                 Text          = fileName + "  —  Detail";
@@ -871,8 +869,33 @@ namespace SPD_Checker
                     { e.CellStyle.BackColor = Color.FromArgb(210, 45, 55); e.CellStyle.ForeColor = Color.White; }
                 };
 
-                // Bottom close button
+                // Bottom buttons: [🔧 Editor에서 열기] [Close]
                 var pnlBot = new Panel { Dock = DockStyle.Bottom, Height = 44, BackColor = Color.FromArgb(237, 239, 243) };
+
+                var firstFail = results.FirstOrDefault(r => r.Status == CheckStatus.Fail);
+                int? firstFailOffset = firstFail != null
+                    ? SpdEditorForm.FindOffsetByCheckItem(firstFail.CheckItem)
+                    : null;
+
+                var btnEditor = new Button
+                {
+                    Text      = "🔧  Editor에서 열기",
+                    Size      = new Size(160, 30),
+                    FlatStyle = FlatStyle.Flat,
+                    BackColor = Color.FromArgb(120, 40, 170),
+                    ForeColor = Color.White,
+                    Font      = new Font("Segoe UI", 9F, FontStyle.Bold),
+                    Anchor    = AnchorStyles.Right | AnchorStyles.Top,
+                    Cursor    = Cursors.Hand
+                };
+                btnEditor.FlatAppearance.BorderSize = 0;
+                btnEditor.Click += (s, e) =>
+                {
+                    JumpOffset   = firstFailOffset;
+                    DialogResult = DialogResult.OK;
+                    Close();
+                };
+
                 var btnClose = new Button
                 {
                     Text      = "Close",
@@ -885,8 +908,14 @@ namespace SPD_Checker
                 };
                 btnClose.FlatAppearance.BorderSize = 0;
                 btnClose.Click += (s, e) => Close();
-                pnlBot.Layout += (s, e) => btnClose.Location = new Point(pnlBot.Width - 104, 7);
+
+                pnlBot.Layout += (s, e) =>
+                {
+                    btnClose.Location  = new Point(pnlBot.Width - 104, 7);
+                    btnEditor.Location = new Point(pnlBot.Width - 274, 7);
+                };
                 pnlBot.Controls.Add(btnClose);
+                pnlBot.Controls.Add(btnEditor);
 
                 Controls.Add(dgv);
                 Controls.Add(pnlBot);

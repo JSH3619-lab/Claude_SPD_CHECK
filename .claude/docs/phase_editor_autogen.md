@@ -16,7 +16,7 @@
 | E-4  | Auto-Fix 통합 (구 SpdFixer) | ✅ 완료 |
 | E-5  | Save / Load (.sp5 / .bin) + dirty 추적 마무리 | ✅ 완료 |
 | E-6  | AutoGenForm + SpdAutoGen 로직 | ✅ 완료 |
-| **E-7**  | **모드 전환 [Mode ▾] 드롭다운 + FAIL 더블클릭 점프** | 🔄 **다음** |
+| E-7  | 모드 전환 [Mode ▾] 드롭다운 + FAIL → Editor 점프 | ✅ 완료 |
 | E-3.5 | (보류) Part Info Form 입력 → byte 역계산 | 후순위 |
 
 ---
@@ -192,13 +192,3 @@ SPD_Folder/
 - Speed/Density/Module/Rank 입력 시 해당 byte 자동 갱신
 - `SpdFixer` 역방향 매핑 로직 재사용
 
----
-
-## 6. 미결 사항
-
-| # | 항목 | 비고 |
-|---|------|------|
-| 1 | Lot No / Serial No Byte 위치 | 사용자 추후 지정 (현재 Part Info 표시 제외) |
-| 2 | AutoGen_Log.csv 컬럼 정의 | 추후 확정 (잠정: 시각/PartNo/템플릿/결과/오류) |
-| 3 | XMP P3~P5 CRC 재계산 지원 | 현재 P1/P2까지만 |
-| 4 | Auto-Gen 후 Editor 자동 점프 토글 | 옵션화 — 작업자 화면에서 결정 |

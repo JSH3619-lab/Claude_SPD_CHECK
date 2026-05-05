@@ -20,7 +20,7 @@ namespace SPD_Checker.Forms
         private Label    _lblResultDetail;
         private ListView _lvHistory;
 
-        public bool SwitchRequested { get; private set; }
+        public AppMode? NextMode { get; private set; }
 
         public AutoGenForm()
         {
@@ -58,21 +58,9 @@ namespace SPD_Checker.Forms
                 TextAlign = ContentAlignment.MiddleLeft,
                 Padding   = new Padding(20, 0, 0, 0)
             });
-            var btnSwitch = new Button
-            {
-                Text      = "← 모드 선택",
-                Dock      = DockStyle.Right,
-                Width     = 120,
-                Font      = new Font("Segoe UI", 9F, FontStyle.Bold),
-                ForeColor = Color.White,
-                BackColor = Color.FromArgb(140, 50, 10),
-                FlatStyle = FlatStyle.Flat,
-                Cursor    = Cursors.Hand,
-                TabStop   = false
-            };
-            btnSwitch.FlatAppearance.BorderSize = 0;
-            btnSwitch.Click += (s, e) => { SwitchRequested = true; Close(); };
-            p.Controls.Add(btnSwitch);
+            var btnMode = ModeDropdown.Create(AppMode.AutoGen,
+                m => { NextMode = m; Close(); });
+            p.Controls.Add(btnMode);
             return p;
         }
 

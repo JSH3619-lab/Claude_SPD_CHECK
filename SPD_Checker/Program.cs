@@ -12,39 +12,52 @@ namespace SPD_Checker
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
+            AppMode? mode = null;
+            string  jumpPath   = null;
+            int?    jumpOffset = null;
+
             while (true)
             {
-                AppMode mode;
-                using (var launch = new LaunchForm())
+                if (mode == null)
                 {
-                    if (launch.ShowDialog() != DialogResult.OK)
-                        return;
-                    mode = launch.SelectedMode;
+                    using (var launch = new LaunchForm())
+                    {
+                        if (launch.ShowDialog() != DialogResult.OK) return;
+                        mode = launch.SelectedMode;
+                    }
                 }
 
-                bool switchRequested = false;
-                switch (mode)
+                AppMode? nextMode = null;
+                string  nextPath   = null;
+                int?    nextOffset = null;
+
+                switch (mode.Value)
                 {
                     case AppMode.Check:
                         var f = new MainForm();
                         Application.Run(f);
-                        switchRequested = f.SwitchRequested;
+                        nextMode   = f.NextMode;
+                        nextPath   = f.JumpFilePath;
+                        nextOffset = f.JumpOffset;
                         break;
 
                     case AppMode.Editor:
-                        var ed = new SpdEditorForm();
+                        var ed = new SpdEditorForm(jumpPath, jumpOffset);
                         Application.Run(ed);
-                        switchRequested = ed.SwitchRequested;
+                        nextMode = ed.NextMode;
                         break;
 
                     case AppMode.AutoGen:
                         var ag = new AutoGenForm();
                         Application.Run(ag);
-                        switchRequested = ag.SwitchRequested;
+                        nextMode = ag.NextMode;
                         break;
                 }
 
-                if (!switchRequested) return;
+                if (!nextMode.HasValue) return;
+                mode       = nextMode;
+                jumpPath   = nextPath;
+                jumpOffset = nextOffset;
             }
         }
     }
