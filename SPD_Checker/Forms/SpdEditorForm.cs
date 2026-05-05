@@ -179,8 +179,8 @@ namespace SPD_Checker.Forms
 
             btnLoad.Click    += (s, e) => LoadFileDialog();
             btnNew.Click     += (s, e) => NewFile();
-            btnSave.Click    += (s, e) => ShowComingSoon("Save 기능은 E-5 단계에서 구현됩니다.");
-            btnSaveAs.Click  += (s, e) => ShowComingSoon("Save As 기능은 E-5 단계에서 구현됩니다.");
+            btnSave.Click    += (s, e) => SaveFile();
+            btnSaveAs.Click  += (s, e) => SaveFileAs();
             btnCrc.Click     += (s, e) => RecalculateCrcs();
             btnAutoFix.Click += (s, e) => AutoFix();
 
@@ -733,6 +733,46 @@ namespace SPD_Checker.Forms
 
         private string GetDisplayName() =>
             _filePath != null ? Path.GetFileName(_filePath) : "(새 파일)";
+
+        // ── Save / Save As ───────────────────────────────────────────────────
+        private void SaveFile()
+        {
+            if (_filePath == null) { SaveFileAs(); return; }
+            WriteFile(_filePath);
+        }
+
+        private void SaveFileAs()
+        {
+            using (var dlg = new SaveFileDialog())
+            {
+                dlg.Filter   = "SPD Files (*.sp5)|*.sp5|Binary Files (*.bin)|*.bin";
+                dlg.FileName = _filePath != null ? Path.GetFileName(_filePath) : "new_file.sp5";
+                dlg.Title    = "SPD 파일 저장";
+                if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                WriteFile(dlg.FileName);
+            }
+        }
+
+        private void WriteFile(string path)
+        {
+            try
+            {
+                if (string.Equals(Path.GetExtension(path), ".bin", StringComparison.OrdinalIgnoreCase))
+                    File.WriteAllBytes(path, _data);
+                else
+                    File.WriteAllText(path, SpdFixer.SerializeToSp5(_data), Encoding.ASCII);
+
+                _filePath = path;
+                _dirty    = false;
+                UpdateStatusBar();
+                UpdateTitle();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"저장 실패:\n{ex.Message}",
+                    "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
 
         private static void ShowComingSoon(string message) =>
             MessageBox.Show(message, "준비 중", MessageBoxButtons.OK, MessageBoxIcon.Information);
