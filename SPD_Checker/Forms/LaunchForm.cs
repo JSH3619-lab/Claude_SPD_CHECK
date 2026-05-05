@@ -77,8 +77,7 @@ namespace SPD_Checker.Forms
                 "🤖\n\nAuto-Gen\n\nQR 스캔 자동 생성 (작업자)",
                 Color.FromArgb(170, 70, 20),
                 new Point(420, 110));
-            btnAutoGen.Click += (s, e) => ShowComingSoon(
-                "Auto-Gen Mode은 추후 단계(E-6)에서 구현됩니다.");
+            btnAutoGen.Click += (s, e) => SelectMode(AppMode.AutoGen);
 
             Controls.Add(btnCheck);
             Controls.Add(btnEditor);
@@ -111,10 +110,5 @@ namespace SPD_Checker.Forms
             Close();
         }
 
-        private static void ShowComingSoon(string message)
-        {
-            MessageBox.Show(message, "준비 중",
-                MessageBoxButtons.OK, MessageBoxIcon.Information);
-        }
     }
 }

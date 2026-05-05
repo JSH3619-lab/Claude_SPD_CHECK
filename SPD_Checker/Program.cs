@@ -36,6 +36,12 @@ namespace SPD_Checker
                         Application.Run(ed);
                         switchRequested = ed.SwitchRequested;
                         break;
+
+                    case AppMode.AutoGen:
+                        var ag = new AutoGenForm();
+                        Application.Run(ag);
+                        switchRequested = ag.SwitchRequested;
+                        break;
                 }
 
                 if (!switchRequested) return;
