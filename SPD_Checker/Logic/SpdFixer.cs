@@ -105,7 +105,7 @@ namespace SPD_Checker.Logic
         private static void RecalcJedecCrc(byte[] data)
         {
             if (data.Length < 512) return;
-            ushort crc = SpdChecker.ComputeCrc16(data, 0, 510);
+            ushort crc = SpdParser.ComputeCrc16(data, 0, 510);
             data[510] = (byte)(crc & 0xFF);
             data[511] = (byte)(crc >> 8);
         }
@@ -114,7 +114,7 @@ namespace SPD_Checker.Logic
         private static void RecalcXmpSectionCrc(byte[] data, int baseOffset)
         {
             if (data.Length < baseOffset + 64) return;
-            ushort crc = SpdChecker.ComputeCrc16(data, baseOffset, 62);
+            ushort crc = SpdParser.ComputeCrc16(data, baseOffset, 62);
             data[baseOffset + 62] = (byte)(crc & 0xFF);
             data[baseOffset + 63] = (byte)(crc >> 8);
         }
@@ -149,9 +149,9 @@ namespace SPD_Checker.Logic
         public static byte[] ApplyFixes(byte[] original, string filePath)
         {
             byte[] data      = (byte[])original.Clone();
-            string nameNoExt = SpdChecker.StripSuffix(
+            string nameNoExt = SpdParser.StripSuffix(
                                    Path.GetFileNameWithoutExtension(filePath));
-            var f = SpdChecker.ParsePartFields(nameNoExt);
+            var f = SpdParser.ParsePartFields(nameNoExt);
 
             // P1: 고정값
             FixDramType(data);
@@ -181,7 +181,7 @@ namespace SPD_Checker.Logic
 
             // P5: XMP (6000 이상 + 파일 크기 832 이상)
             if (f.Valid && f.SpeedCode != null &&
-                SpdChecker.XMP_SPEED_CODES.Contains(f.SpeedCode) &&
+                SpdParser.XMP_SPEED_CODES.Contains(f.SpeedCode) &&
                 data.Length >= 832)
             {
                 FixXmp(data, f);
@@ -202,33 +202,33 @@ namespace SPD_Checker.Logic
             Array.Copy(ascii, 0, data, PART_NUMBER_OFFSET, Math.Min(ascii.Length, PART_NUMBER_LENGTH));
         }
 
-        private static void FixModuleType(byte[] data, SpdChecker.PartFields f)
+        private static void FixModuleType(byte[] data, PartFields f)
         {
             if (!DIMM_TYPE_MAP.TryGetValue(f.DimmType, out byte val)) return;
             data[MODULE_TYPE_OFFSET] = (byte)((data[MODULE_TYPE_OFFSET] & 0xF0) | (val & 0x0F));
         }
 
-        private static void FixDieDensity(byte[] data, SpdChecker.PartFields f)
+        private static void FixDieDensity(byte[] data, PartFields f)
         {
             if (!DIE_DENSITY_MAP.TryGetValue(f.DieDensityCode, out byte val)) return;
             // bits[4:0] 만 교체, bits[7:5] (Dies/Package) 보존
             data[DIE_DENSITY_OFFSET] = (byte)((data[DIE_DENSITY_OFFSET] & 0xE0) | (val & 0x1F));
         }
 
-        private static void FixIoWidth(byte[] data, SpdChecker.PartFields f)
+        private static void FixIoWidth(byte[] data, PartFields f)
         {
             if (!IO_WIDTH_MAP.TryGetValue(f.CompositionCode, out byte val)) return;
             // bits[7:5] 만 교체, bits[4:0] 보존
             data[IO_WIDTH_OFFSET] = (byte)((data[IO_WIDTH_OFFSET] & 0x1F) | (val & 0xE0));
         }
 
-        private static void FixBankGroups(byte[] data, SpdChecker.PartFields f)
+        private static void FixBankGroups(byte[] data, PartFields f)
         {
             if (!BANK_MAP.TryGetValue(f.BankCode, out byte val)) return;
             data[BANK_OFFSET] = val;
         }
 
-        private static void FixRank(byte[] data, SpdChecker.PartFields f)
+        private static void FixRank(byte[] data, PartFields f)
         {
             if (!RANK_MAP.TryGetValue(f.RankCode, out byte val)) return;
             // bits[5:3] 만 교체, 나머지 보존
@@ -236,11 +236,11 @@ namespace SPD_Checker.Logic
         }
 
         // ── P3: JEDEC 타이밍 ──────────────────────────────────────────────────
-        private static void FixJedecTimings(byte[] data, SpdChecker.PartFields f)
+        private static void FixJedecTimings(byte[] data, PartFields f)
         {
             // 6000 이상 XMP 파트의 JEDEC SPD 타이밍은 WM(5600) 기준
-            string jedecCode = SpdChecker.XMP_SPEED_CODES.Contains(f.SpeedCode) ? "WM" : f.SpeedCode;
-            if (!SpdChecker.SPEED_MAP.TryGetValue(jedecCode, out SpdChecker.SpeedSpec spec)) return;
+            string jedecCode = SpdParser.XMP_SPEED_CODES.Contains(f.SpeedCode) ? "WM" : f.SpeedCode;
+            if (!SpdParser.SPEED_MAP.TryGetValue(jedecCode, out SpeedSpec spec)) return;
 
             WriteLE16(data, TCK_AVG_MIN_OFFSET, spec.TckAvgMin);
 
@@ -258,7 +258,7 @@ namespace SPD_Checker.Logic
             data[MODULE_MFR_OFFSET + 1] = RAMOS_MFR_B2;
         }
 
-        private static void FixDramMfrId(byte[] data, SpdChecker.PartFields f)
+        private static void FixDramMfrId(byte[] data, PartFields f)
         {
             if (data.Length < DRAM_MFR_OFFSET + 2) return;
             if (f.DramMfrCode == '\0') return;
@@ -268,7 +268,7 @@ namespace SPD_Checker.Logic
         }
 
         // ── P5: XMP ───────────────────────────────────────────────────────────
-        private static void FixXmp(byte[] data, SpdChecker.PartFields f)
+        private static void FixXmp(byte[] data, PartFields f)
         {
             data[XMP_GLOBAL_BASE + 0] = 0x0C;
             data[XMP_GLOBAL_BASE + 1] = 0x4A;
@@ -294,7 +294,7 @@ namespace SPD_Checker.Logic
         private static void FixXmpProfile(byte[] data, string speedCode,
                                            int baseOffset, int nameOffset)
         {
-            if (!SpdChecker.SPEED_MAP.TryGetValue(speedCode, out SpdChecker.SpeedSpec spec)) return;
+            if (!SpdParser.SPEED_MAP.TryGetValue(speedCode, out SpeedSpec spec)) return;
             if (!SPEED_TO_VDD.TryGetValue(speedCode, out byte vByte)) return;
 
             // VPP (BASE+0): 1.8V 고정

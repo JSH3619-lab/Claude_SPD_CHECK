@@ -56,7 +56,7 @@ namespace SPD_Checker.Logic
             byte[] data;
             try
             {
-                data = ParseSpdText(filePath);
+                data = SpdParser.ParseFile(filePath);
             }
             catch (Exception ex)
             {
@@ -72,6 +72,18 @@ namespace SPD_Checker.Logic
                 });
                 return results;
             }
+
+            string partNumberFromName = SpdParser.StripSuffix(nameNoExt);
+            return CheckBytes(data, fileName, partNumberFromName);
+        }
+
+        // ── byte[] 단위 검증 (Editor 실시간 검증 / Auto-Gen 사후 검증 등) ────
+        // skipFilenameChecks: true → 파일명 기반 검사(Mfr 라우팅/Prefix/Part No) 생략
+        public static List<CheckResult> CheckBytes(
+            byte[] data, string fileName, string partNumberFromName,
+            bool skipFilenameChecks = false)
+        {
+            var results = new List<CheckResult>();
 
             // ── 최소 크기 확인 (Module Mfr ID 읽기에 514 bytes 필요) ─────────
             if (data.Length < 514)
@@ -89,65 +101,69 @@ namespace SPD_Checker.Logic
                 return results;
             }
 
-            // ── Module Mfr ID 라우팅 (Bytes 512~513) ─────────────────────────
-            byte mfrB1 = data[MODULE_MFR_OFFSET];
-            byte mfrB2 = data[MODULE_MFR_OFFSET + 1];
-
-            if (MODULE_MFR_IDENTIFY.TryGetValue((mfrB1, mfrB2), out string mfrName))
+            // ── Module Mfr ID 라우팅 (Bytes 512~513) — 파일명 기반 skip 가능 ─
+            if (!skipFilenameChecks)
             {
-                if (mfrName != "RAmos")
+                byte mfrB1 = data[MODULE_MFR_OFFSET];
+                byte mfrB2 = data[MODULE_MFR_OFFSET + 1];
+
+                if (MODULE_MFR_IDENTIFY.TryGetValue((mfrB1, mfrB2), out string mfrName))
+                {
+                    if (mfrName != "RAmos")
+                    {
+                        results.Add(new CheckResult
+                        {
+                            FileName  = fileName,
+                            CheckItem = "Module Mfr ID",
+                            Expected  = "-",
+                            Actual    = $"0x{mfrB1:X2} / 0x{mfrB2:X2}  ({mfrName})",
+                            Pass      = false,
+                            Status    = CheckStatus.Skip,
+                            Note      = $"{mfrName} 모듈 — 검사 생략"
+                        });
+                        return results;
+                    }
+                }
+                else
                 {
                     results.Add(new CheckResult
                     {
                         FileName  = fileName,
                         CheckItem = "Module Mfr ID",
                         Expected  = "-",
-                        Actual    = $"0x{mfrB1:X2} / 0x{mfrB2:X2}  ({mfrName})",
+                        Actual    = $"0x{mfrB1:X2} / 0x{mfrB2:X2}",
                         Pass      = false,
                         Status    = CheckStatus.Skip,
-                        Note      = $"{mfrName} 모듈 — 검사 생략"
+                        Note      = $"0x{mfrB1:X2}/0x{mfrB2:X2} 미등록 제조사 — 검사 생략"
                     });
                     return results;
                 }
-                // mfrName == "RAmos" → 계속 진행
-            }
-            else
-            {
-                // 미등록 제조사
-                results.Add(new CheckResult
-                {
-                    FileName  = fileName,
-                    CheckItem = "Module Mfr ID",
-                    Expected  = "-",
-                    Actual    = $"0x{mfrB1:X2} / 0x{mfrB2:X2}",
-                    Pass      = false,
-                    Status    = CheckStatus.Skip,
-                    Note      = $"0x{mfrB1:X2}/0x{mfrB2:X2} 미등록 제조사 — 검사 생략"
-                });
-                return results;
             }
 
-            // ── RAmos 모듈: 파일명 prefix 확인 (RM/TM/CM/BM) ────────────────
-            bool isStandard = STANDARD_PREFIXES.Any(p =>
-                nameNoExt.StartsWith(p, StringComparison.OrdinalIgnoreCase));
-
-            if (!isStandard)
+            // ── 파일명 prefix 확인 (RM/TM/CM/BM) — Editor에선 skip ───────────
+            if (!skipFilenameChecks)
             {
-                results.Add(new CheckResult
+                bool isStandard = STANDARD_PREFIXES.Any(p =>
+                    partNumberFromName.StartsWith(p, StringComparison.OrdinalIgnoreCase));
+
+                if (!isStandard)
                 {
-                    FileName  = fileName,
-                    CheckItem = "Part Number",
-                    Expected  = "RM / TM / CM / BM prefix",
-                    Actual    = nameNoExt,
-                    Pass      = false,
-                    Status    = CheckStatus.Fail,
-                    Note      = "RAmos 모듈이지만 파일명 비표준 — Part Err"
-                });
-                return results;
+                    results.Add(new CheckResult
+                    {
+                        FileName  = fileName,
+                        CheckItem = "Part Number",
+                        Expected  = "RM / TM / CM / BM prefix",
+                        Actual    = partNumberFromName,
+                        Pass      = false,
+                        Status    = CheckStatus.Fail,
+                        Note      = "RAmos 모듈이지만 파일명 비표준 — Part Err"
+                    });
+                    return results;
+                }
             }
 
             // ── 전체 크기 확인 (DRAM Mfr ID 553까지 필요) ───────────────────
-            int minRequired = DRAM_MFR_OFFSET + 2;   // 554 = 552 + 2
+            int minRequired = DRAM_MFR_OFFSET + 2;
             if (data.Length < minRequired)
             {
                 results.Add(new CheckResult
@@ -163,16 +179,16 @@ namespace SPD_Checker.Logic
                 return results;
             }
 
-            // ── Phase 1: Part Number ─────────────────────────────────────────
-            string partNumberFromName = StripSuffix(nameNoExt);
-            results.Add(CheckPartNumber(fileName, partNumberFromName, data));
+            // ── Phase 1: Part Number (Editor에선 skip — bytes 521~550이 입력 출처) ─
+            if (!skipFilenameChecks)
+                results.Add(CheckPartNumber(fileName, partNumberFromName, data));
 
             // ── Phase 2: Manufacturer ID ─────────────────────────────────────
             results.Add(CheckModuleMfr(fileName, data));
             results.Add(CheckDramMfr(fileName, partNumberFromName, data));
 
             // ── Phase 3: Part Content Validation ─────────────────────────────
-            PartFields fields = ParsePartFields(partNumberFromName);
+            PartFields fields = SpdParser.ParsePartFields(partNumberFromName);
             if (!fields.Valid)
             {
                 results.Add(new CheckResult
@@ -190,7 +206,7 @@ namespace SPD_Checker.Logic
             {
                 results.Add(CheckDramType(fileName, data));
                 results.Add(CheckModuleType(fileName, fields, data));
-                if (fields.SpeedCode != null && XMP_SPEED_CODES.Contains(fields.SpeedCode))
+                if (fields.SpeedCode != null && SpdParser.XMP_SPEED_CODES.Contains(fields.SpeedCode))
                     results.Add(CheckXmpDimmType(fileName, fields));
                 results.Add(CheckDieDensity(fileName, fields, data));
                 results.Add(CheckIoWidth(fileName, fields, data));
@@ -205,40 +221,10 @@ namespace SPD_Checker.Logic
             results.AddRange(CheckCrc(fileName, data));
 
             // ── XMP 3.0 검증 (6000 이상 속도 코드 파트만) ────────────────────
-            if (fields.Valid && fields.SpeedCode != null && XMP_SPEED_CODES.Contains(fields.SpeedCode))
+            if (fields.Valid && fields.SpeedCode != null && SpdParser.XMP_SPEED_CODES.Contains(fields.SpeedCode))
                 results.AddRange(CheckXmp(fileName, fields, data));
 
             return results;
-        }
-
-        // ── CSV Hex 텍스트 파싱 ──────────────────────────────────────────────
-        // 형식: "30,12,02,..." CRLF 구분, 16바이트/줄, 64줄 = 1024 논리 바이트
-        internal static byte[] ParseSpdText(string filePath)
-        {
-            string text = File.ReadAllText(filePath, Encoding.ASCII);
-
-            var tokens = text
-                .Split(new[] { ',', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-
-            var bytes = new List<byte>(1024);
-            foreach (string token in tokens)
-            {
-                string t = token.Trim();
-                if (t.Length == 0) continue;
-                bytes.Add(Convert.ToByte(t, 16));
-            }
-            return bytes.ToArray();
-        }
-
-        // ── 파일명 접미사 제거 ───────────────────────────────────────────────
-        // "0Y", "-TN" 등 SPD에 포함되지 않는 접미사 제거
-        internal static string StripSuffix(string nameNoExt)
-        {
-            if (nameNoExt.EndsWith("-TN", StringComparison.OrdinalIgnoreCase))
-                nameNoExt = nameNoExt.Substring(0, nameNoExt.Length - 3);
-            if (nameNoExt.EndsWith("0Y", StringComparison.OrdinalIgnoreCase))
-                nameNoExt = nameNoExt.Substring(0, nameNoExt.Length - 2);
-            return nameNoExt;
         }
 
         // ── Phase 1: Part Number ─────────────────────────────────────────────
@@ -250,7 +236,7 @@ namespace SPD_Checker.Logic
             Array.Copy(data, PART_NUMBER_OFFSET, pnBytes, 0, PART_NUMBER_LENGTH);
 
             string actualTrim = Encoding.ASCII.GetString(pnBytes).TrimEnd('\x20', '\x00');
-            string actualNorm = StripSuffix(actualTrim);
+            string actualNorm = SpdParser.StripSuffix(actualTrim);
             bool   pass       = string.Equals(expectedPartNumber, actualNorm, StringComparison.Ordinal);
             string hexDump    = BitConverter.ToString(pnBytes).Replace("-", " ");
 
@@ -370,108 +356,6 @@ namespace SPD_Checker.Logic
                 { "1G",  1 }, { "2G",  2 }, { "4G",  4 }, { "8G",  8 },
                 { "AG", 16 }, { "BG", 32 }, { "CG", 64 },
             };
-
-        private static readonly Dictionary<byte, int> DIE_DENSITY_GB_MAP =
-            new Dictionary<byte, int>
-            {
-                { 0x01,  4 }, { 0x02,  8 }, { 0x04, 16 }, { 0x05, 24 }, { 0x06, 32 },
-            };
-
-        private static readonly Dictionary<byte, int> DIES_PER_PKG_MAP =
-            new Dictionary<byte, int>
-            {
-                { 0, 1 }, { 1, 2 }, { 2, 2 }, { 3, 4 }, { 4, 8 }, { 5, 16 },
-            };
-
-        private static readonly Dictionary<byte, int> IO_WIDTH_BITS_MAP =
-            new Dictionary<byte, int>
-            {
-                { 0, 4 }, { 1, 8 }, { 2, 16 },
-            };
-
-        internal struct SpeedSpec
-        {
-            public string Name;
-            public int    TckPs;
-            public int    TckAvgMin;
-            public int    CL;
-            public int    TrcdNck;
-            public int    TrpNck;
-        }
-
-        internal static readonly Dictionary<string, SpeedSpec> SPEED_MAP =
-            new Dictionary<string, SpeedSpec>(StringComparer.Ordinal)
-            {
-                { "QK", new SpeedSpec { Name="DDR5-4800", TckPs=416, TckAvgMin=0x01A0, CL=40, TrcdNck=39, TrpNck=39 } },
-                { "WM", new SpeedSpec { Name="DDR5-5600", TckPs=357, TckAvgMin=0x0165, CL=46, TrcdNck=45, TrpNck=45 } },
-                { "CM", new SpeedSpec { Name="DDR5-6000", TckPs=333, TckAvgMin=0x014D, CL=34, TrcdNck=44, TrpNck=44 } },
-                { "CP", new SpeedSpec { Name="DDR5-6400", TckPs=312, TckAvgMin=0x0138, CL=52, TrcdNck=52, TrpNck=52 } },
-                { "CQ", new SpeedSpec { Name="DDR5-6400", TckPs=312, TckAvgMin=0x0138, CL=36, TrcdNck=44, TrpNck=44 } },
-                { "CR", new SpeedSpec { Name="DDR5-6800", TckPs=294, TckAvgMin=0x0126, CL=36, TrcdNck=44, TrpNck=44 } },
-                { "CS", new SpeedSpec { Name="DDR5-7200", TckPs=277, TckAvgMin=0x0115, CL=38, TrcdNck=46, TrpNck=46 } },
-            };
-
-        // XMP 속도 코드 (6000 이상) — JEDEC SPD는 WM(5600) 기준으로 검증
-        internal static readonly HashSet<string> XMP_SPEED_CODES =
-            new HashSet<string>(StringComparer.Ordinal) { "CM", "CQ", "CR", "CS" };
-
-        // ── Phase 3: Part Number Field Parser ────────────────────────────────
-        internal struct PartFields
-        {
-            public char   DimmType;
-            public string DensityCode;
-            public char   BankCode;
-            public char   CompositionCode;
-            public char   DieDensityCode;
-            public char   RankCode;
-            public char   DramMfrCode;   // '-' 이후 첫 글자 (G/S/H/N/C/M)
-            public string SpeedCode;     // null = 미검출
-            public bool   Valid;
-            public string Error;
-        }
-
-        internal static PartFields ParsePartFields(string partNoFromName)
-        {
-            var f = new PartFields();
-
-            int dashIdx = partNoFromName.IndexOf('-');
-            string body = dashIdx >= 0
-                ? partNoFromName.Substring(0, dashIdx)
-                : partNoFromName;
-
-            // prefix(2) 제거 후 body core
-            if (body.Length < 2) { f.Error = "본체 너무 짧음"; return f; }
-            string core = body.Substring(2);
-
-            // core: [0]=DRAMType [1]=DimmType [2~3]=Density [4]=Bank [5]=Comp [6]=DieDensity [7]=Rank
-            if (core.Length < 8) { f.Error = $"파트 본체 길이 부족 ({core.Length} < 8)"; return f; }
-
-            f.DimmType        = char.ToUpper(core[1]);
-            f.DensityCode     = core.Substring(2, 2).ToUpper();
-            f.BankCode        = char.ToUpper(core[4]);
-            f.CompositionCode = char.ToUpper(core[5]);
-            f.DieDensityCode  = char.ToUpper(core[6]);
-            f.RankCode        = core[7];
-
-            // Speed 코드 + DRAM Mfr 코드: '-' 이후 문자열에서 파싱
-            if (dashIdx >= 0 && dashIdx + 1 < partNoFromName.Length)
-            {
-                string suffix = partNoFromName.Substring(dashIdx + 1);
-                if (suffix.Length > 0)
-                    f.DramMfrCode = char.ToUpper(suffix[0]);
-                foreach (string code in SPEED_MAP.Keys)
-                {
-                    if (suffix.IndexOf(code, StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        f.SpeedCode = code;
-                        break;
-                    }
-                }
-            }
-
-            f.Valid = true;
-            return f;
-        }
 
         // ── Phase 3: Check Methods ───────────────────────────────────────────
 
@@ -645,9 +529,9 @@ namespace SPD_Checker.Logic
                 yield break;
             }
 
-            SpeedSpec spec     = SPEED_MAP[f.SpeedCode];
+            SpeedSpec spec     = SpdParser.SPEED_MAP[f.SpeedCode];
             // 6000 이상 XMP 파트의 JEDEC SPD 영역은 WM(5600) 타이밍으로 기록됨
-            SpeedSpec jedecSpec = XMP_SPEED_CODES.Contains(f.SpeedCode) ? SPEED_MAP["WM"] : spec;
+            SpeedSpec jedecSpec = SpdParser.XMP_SPEED_CODES.Contains(f.SpeedCode) ? SpdParser.SPEED_MAP["WM"] : spec;
             bool      isXmp     = jedecSpec.Name != spec.Name;
 
             // tCKAVGmin (Bytes 20~21, Little-Endian)
@@ -770,9 +654,9 @@ namespace SPD_Checker.Logic
             byte byte234     = data[RANK_OFFSET];
             byte rankBits    = (byte)((byte234 >> 3) & 0x07);
 
-            if (!DIE_DENSITY_GB_MAP.TryGetValue(densityCode, out int dieDensityGb) ||
-                !DIES_PER_PKG_MAP.TryGetValue(diesPkgCode, out int diesPerPkg) ||
-                !IO_WIDTH_BITS_MAP.TryGetValue(ioCode, out int ioWidthBits))
+            if (!SpdParser.DIE_DENSITY_GB_MAP.TryGetValue(densityCode, out int dieDensityGb) ||
+                !SpdParser.DIES_PER_PKG_MAP.TryGetValue(diesPkgCode, out int diesPerPkg) ||
+                !SpdParser.IO_WIDTH_BITS_MAP.TryGetValue(ioCode, out int ioWidthBits))
                 return new CheckResult
                 {
                     FileName  = fileName,
@@ -837,20 +721,6 @@ namespace SPD_Checker.Logic
                 { "WM", '5' }, { "CM", '6' }, { "CQ", '6' }, { "CR", '7' }, { "CS", '7' },
             };
 
-        internal static ushort ComputeCrc16(byte[] data, int offset, int length)
-        {
-            ushort crc = 0x0000;
-            for (int i = offset; i < offset + length; i++)
-            {
-                crc ^= (ushort)(data[i] << 8);
-                for (int j = 0; j < 8; j++)
-                    crc = (crc & 0x8000) != 0
-                        ? (ushort)((crc << 1) ^ 0x1021)
-                        : (ushort)(crc << 1);
-            }
-            return crc;
-        }
-
         private static IEnumerable<CheckResult> CheckCrc(string fileName, byte[] data)
         {
             if (data.Length < 512)
@@ -868,7 +738,7 @@ namespace SPD_Checker.Logic
                 yield break;
             }
 
-            ushort calc   = ComputeCrc16(data, 0, 510);
+            ushort calc   = SpdParser.ComputeCrc16(data, 0, 510);
             ushort stored = (ushort)(data[CRC_OFFSET] | (data[CRC_OFFSET + 1] << 8));
             bool   pass   = calc == stored;
 
@@ -955,7 +825,7 @@ namespace SPD_Checker.Logic
             };
 
             // [3] Global Section CRC (Byte 640~701 → 702~703)
-            ushort calcGlobal   = ComputeCrc16(data, XMP_GLOBAL_BASE, 62);
+            ushort calcGlobal   = SpdParser.ComputeCrc16(data, XMP_GLOBAL_BASE, 62);
             ushort storedGlobal = (ushort)(data[702] | (data[703] << 8));
             bool   passGCrc     = calcGlobal == storedGlobal;
             yield return new CheckResult
@@ -991,7 +861,7 @@ namespace SPD_Checker.Logic
             string fileName, string speedCode, char bankCode,
             int baseOffset, int nameOffset, byte[] data, int profileNum)
         {
-            SpeedSpec spec   = SPEED_MAP[speedCode];
+            SpeedSpec spec   = SpdParser.SPEED_MAP[speedCode];
             string    prefix = $"[XMP] P{profileNum}";
 
             // VPP (BASE+0): 0x30 = 1.8V 고정
@@ -1128,7 +998,7 @@ namespace SPD_Checker.Logic
                 yield return r;
 
             // Profile CRC (BASE+62~63 LE, 계산범위 BASE~BASE+61)
-            ushort calcCrc   = ComputeCrc16(data, baseOffset, 62);
+            ushort calcCrc   = SpdParser.ComputeCrc16(data, baseOffset, 62);
             ushort storedCrc = (ushort)(data[baseOffset + 62] | (data[baseOffset + 63] << 8));
             bool   passCrc   = calcCrc == storedCrc;
             yield return new CheckResult

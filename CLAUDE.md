@@ -39,6 +39,7 @@
 | 4 | CRC-16 검증 (Byte 0~509 → Byte 510~511, poly=0x1021) | ✅ 완료 |
 | XMP | XMP 3.0 검증 (6000 이상 속도 코드 파트: CM/CQ/CR/CS) | ✅ 완료 |
 | Fix | FAIL 항목 자동 수정 (Save as _FIXED / Overwrite 2가지 모드) | ✅ 완료 |
+| Editor | SPD Editor / Auto-Gen 3-mode 구조 — E-0~E-3 ✅ (LaunchForm / SpdParser·SpdInfo / Hex Grid + 실시간 검증 + CRC) / E-4부터 진행 | 🔄 진행 중 (→ phase_editor_autogen.md) |
 
 ### XMP 3.0 검증 항목 (Phase XMP 세부)
 
@@ -104,3 +105,4 @@ C:\JSH_Folder\SPD_Check_PGM\
 @.claude/docs/jesd400_bytes.md
 @.claude/docs/phase4_crc.md
 @.claude/docs/xmp_bytes.md
+@.claude/docs/phase_editor_autogen.md

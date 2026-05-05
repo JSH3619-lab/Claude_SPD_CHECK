@@ -44,6 +44,9 @@ namespace SPD_Checker
         private int _fileFail;
         private int _fileSkip;
 
+        // ── Mode Switch ──────────────────────────────────────────────────────
+        public bool SwitchRequested { get; private set; }
+
         private bool _showPass = true;
         private bool _showFail = true;
         private bool _showSkip = true;
@@ -101,7 +104,28 @@ namespace SPD_Checker
                                    new Font("Segoe UI", 8F), Color.FromArgb(170, 195, 220),
                                    DockStyle.Right, ContentAlignment.MiddleCenter);
             lblVer.Width = 140;
+            // Mode switch button (rightmost in header)
+            var btnSwitchMode = new Button
+            {
+                Text      = "← 모드 선택",
+                Dock      = DockStyle.Right,
+                Width     = 110,
+                Font      = new Font("Segoe UI", 9F, FontStyle.Bold),
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(50, 80, 120),
+                FlatStyle = FlatStyle.Flat,
+                Cursor    = Cursors.Hand,
+                TabStop   = false
+            };
+            btnSwitchMode.FlatAppearance.BorderSize = 0;
+            btnSwitchMode.Click += (s, e) =>
+            {
+                SwitchRequested = true;
+                Close();
+            };
+
             pnlHeader.Controls.Add(lblTitle);
+            pnlHeader.Controls.Add(btnSwitchMode);
             pnlHeader.Controls.Add(lblVer);
 
             // Drop Zone
@@ -704,7 +728,7 @@ namespace SPD_Checker
                 if (path == null) { errors.Add(name + ": 경로 없음"); continue; }
                 try
                 {
-                    byte[] data      = SpdChecker.ParseSpdText(path);
+                    byte[] data      = SpdParser.ParseFile(path);
                     byte[] fixedData = SpdFixer.ApplyFixes(data, path);
                     if (overwrite)
                         SpdFixer.SaveOverwrite(path, fixedData);
