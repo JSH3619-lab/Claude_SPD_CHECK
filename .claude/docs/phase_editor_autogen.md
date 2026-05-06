@@ -17,7 +17,7 @@
 | E-5  | Save / Load (.sp5 / .bin) + dirty 추적 마무리 | ✅ 완료 |
 | E-6  | AutoGenForm + SpdAutoGen 로직 | ✅ 완료 |
 | E-7  | 모드 전환 [Mode ▾] 드롭다운 + FAIL → Editor 점프 | ✅ 완료 |
-| E-3.5 | (보류) Part Info Form 입력 → byte 역계산 | 후순위 |
+| E-3.5 | Part Info Form 입력 (TextBox + ComboBox 9개) → byte 역계산 + 조합 검증 (Speed↔Bank) | ✅ 완료 |
 
 ---
 

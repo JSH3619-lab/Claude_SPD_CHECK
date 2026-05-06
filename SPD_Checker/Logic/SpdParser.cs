@@ -193,18 +193,37 @@ namespace SPD_Checker.Logic
             return f;
         }
 
+        // ── DRAM Mfr 코드 → IC Brand 코드 ──────────────────────────────────
+        // 파트 P/N 첫 후미 문자 → JEDEC 제조사 → IC 코드
+        // S/G = RAmos(07/25)→S1, H = SK Hynix→S2, M = Micron→S3,
+        // C = CXMT→S6, N = Nanya→S9
+        public static string DramMfrCodeToIc(char dramMfrCode)
+        {
+            switch (char.ToUpperInvariant(dramMfrCode))
+            {
+                case 'S':
+                case 'G': return "S1";
+                case 'H': return "S2";
+                case 'M': return "S3";
+                case 'C': return "S6";
+                case 'N': return "S9";
+                default:  return "S?";
+            }
+        }
+
         // ── 골든 샘플 템플릿 파일명 조립 ────────────────────────────────────
-        // 형식: TPL_{Src}_{DRAM}{DIMM}{Density}{Bank}{IO}{Die}{Rank}_{Speed}.sp5
-        // 예: RMRDAG58A1P-GPWRRWM7-TN → TPL_RM_RDAG58A1_WM.sp5
+        // 형식: TPL_{Src}_{DRAM}{DIMM}{Density}{Bank}{IO}{Die}{Rank}_{IC}_{Speed}.sp5
+        // 예: RMRDAG58A1P-GPWRRWM7-TN → TPL_RM_RDAG58A1_S1_WM.sp5
         public static string BuildTemplateFileName(PartFields f)
         {
             if (!f.Valid)
                 return null;
 
             string speed = f.SpeedCode ?? "??";
+            string ic    = DramMfrCodeToIc(f.DramMfrCode);
             return $"TPL_{f.Sourcing}_{f.DramTypeCode}{f.DimmType}{f.DensityCode}" +
                    $"{f.BankCode}{f.CompositionCode}{f.DieDensityCode}{f.RankCode}_" +
-                   $"{speed}.sp5";
+                   $"{ic}_{speed}.sp5";
         }
 
         // ── CRC-16 (poly=0x1021, init=0x0000) ───────────────────────────────

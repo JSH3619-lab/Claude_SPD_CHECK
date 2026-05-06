@@ -136,13 +136,13 @@ namespace SPD_Checker.Logic
         }
 
         // ── 유틸 ─────────────────────────────────────────────────────────────
-        private static void WriteLE16(byte[] data, int offset, int value)
+        internal static void WriteLE16(byte[] data, int offset, int value)
         {
             data[offset]     = (byte)(value & 0xFF);
             data[offset + 1] = (byte)((value >> 8) & 0xFF);
         }
 
-        private static int ReadLE16(byte[] data, int offset)
+        internal static int ReadLE16(byte[] data, int offset)
             => data[offset] | (data[offset + 1] << 8);
 
         // ── Fix 메인 ─────────────────────────────────────────────────────────
@@ -161,19 +161,19 @@ namespace SPD_Checker.Logic
             {
                 // P2: 파일명 파생
                 FixPartNumber(data, nameNoExt);
-                FixModuleType(data, f);
-                FixDieDensity(data, f);
-                FixIoWidth(data, f);
-                FixBankGroups(data, f);
-                FixRank(data, f);
+                TryFixModuleType(data, f.DimmType);
+                TryFixDieDensity(data, f.DieDensityCode);
+                TryFixIoWidth(data, f.CompositionCode);
+                TryFixBankGroups(data, f.BankCode);
+                TryFixRank(data, f.RankCode);
 
                 // P3: Speed 파생
                 if (f.SpeedCode != null)
-                    FixJedecTimings(data, f);
+                    TryFixJedecTimings(data, f.SpeedCode);
 
                 // P4: Mfr ID
                 FixModuleMfrId(data);
-                FixDramMfrId(data, f);
+                TryFixDramMfrId(data, f.DramMfrCode);
             }
 
             // JEDEC CRC — 항상 마지막
@@ -202,52 +202,78 @@ namespace SPD_Checker.Logic
             Array.Copy(ascii, 0, data, PART_NUMBER_OFFSET, Math.Min(ascii.Length, PART_NUMBER_LENGTH));
         }
 
-        private static void FixModuleType(byte[] data, PartFields f)
+        internal static bool TryFixModuleType(byte[] data, char dimmCode)
         {
-            if (!DIMM_TYPE_MAP.TryGetValue(f.DimmType, out byte val)) return;
+            if (!DIMM_TYPE_MAP.TryGetValue(dimmCode, out byte val)) return false;
             data[MODULE_TYPE_OFFSET] = (byte)((data[MODULE_TYPE_OFFSET] & 0xF0) | (val & 0x0F));
+            return true;
         }
 
-        private static void FixDieDensity(byte[] data, PartFields f)
+        internal static bool TryFixDieDensity(byte[] data, char dieCode)
         {
-            if (!DIE_DENSITY_MAP.TryGetValue(f.DieDensityCode, out byte val)) return;
-            // bits[4:0] 만 교체, bits[7:5] (Dies/Package) 보존
+            if (!DIE_DENSITY_MAP.TryGetValue(dieCode, out byte val)) return false;
+            // bits[7:5] (Dies/Package) 보존
             data[DIE_DENSITY_OFFSET] = (byte)((data[DIE_DENSITY_OFFSET] & 0xE0) | (val & 0x1F));
+            return true;
         }
 
-        private static void FixIoWidth(byte[] data, PartFields f)
+        internal static bool TryFixIoWidth(byte[] data, char compCode)
         {
-            if (!IO_WIDTH_MAP.TryGetValue(f.CompositionCode, out byte val)) return;
-            // bits[7:5] 만 교체, bits[4:0] 보존
+            if (!IO_WIDTH_MAP.TryGetValue(compCode, out byte val)) return false;
             data[IO_WIDTH_OFFSET] = (byte)((data[IO_WIDTH_OFFSET] & 0x1F) | (val & 0xE0));
+            return true;
         }
 
-        private static void FixBankGroups(byte[] data, PartFields f)
+        internal static bool TryFixBankGroups(byte[] data, char bankCode)
         {
-            if (!BANK_MAP.TryGetValue(f.BankCode, out byte val)) return;
+            if (!BANK_MAP.TryGetValue(bankCode, out byte val)) return false;
             data[BANK_OFFSET] = val;
+            return true;
         }
 
-        private static void FixRank(byte[] data, PartFields f)
+        internal static bool TryFixRank(byte[] data, char rankCode)
         {
-            if (!RANK_MAP.TryGetValue(f.RankCode, out byte val)) return;
-            // bits[5:3] 만 교체, 나머지 보존
+            if (!RANK_MAP.TryGetValue(rankCode, out byte val)) return false;
             data[RANK_OFFSET] = (byte)((data[RANK_OFFSET] & 0xC7) | (val & 0x38));
+            return true;
         }
 
         // ── P3: JEDEC 타이밍 ──────────────────────────────────────────────────
-        private static void FixJedecTimings(byte[] data, PartFields f)
+        // SpdChecker.CheckSpeed와 동일한 판정 기준: nCK 공식으로 이미 통과하면 건드리지 않음
+        private static int CalcNck(int ps, int tckPs)
+            => (int)Math.Truncate((ps * 997.0 / tckPs + 1000.0) / 1000.0);
+
+        internal static bool TryFixJedecTimings(byte[] data, string speedCode)
         {
             // 6000 이상 XMP 파트의 JEDEC SPD 타이밍은 WM(5600) 기준
-            string jedecCode = SpdParser.XMP_SPEED_CODES.Contains(f.SpeedCode) ? "WM" : f.SpeedCode;
-            if (!SpdParser.SPEED_MAP.TryGetValue(jedecCode, out SpeedSpec spec)) return;
+            string jedecCode = SpdParser.XMP_SPEED_CODES.Contains(speedCode) ? "WM" : speedCode;
+            if (!SpdParser.SPEED_MAP.TryGetValue(jedecCode, out SpeedSpec spec)) return false;
 
-            WriteLE16(data, TCK_AVG_MIN_OFFSET, spec.TckAvgMin);
+            // tCKAVGmin: Checker와 동일하게 exact match (0x0165 등 정수값 직접 비교)
+            if (ReadLE16(data, TCK_AVG_MIN_OFFSET) != spec.TckAvgMin)
+                WriteLE16(data, TCK_AVG_MIN_OFFSET, spec.TckAvgMin);
 
-            int cl = spec.CL % 2 == 1 ? spec.CL + 1 : spec.CL;  // 홀수 CL → +1 보정
-            WriteLE16(data, TAA_MIN_OFFSET,  cl           * spec.TckPs);
-            WriteLE16(data, TRCD_MIN_OFFSET, spec.TrcdNck * spec.TckPs);
-            WriteLE16(data, TRP_MIN_OFFSET,  spec.TrpNck  * spec.TckPs);
+            int tckPs = spec.TckPs;
+            int cl    = spec.CL % 2 == 1 ? spec.CL + 1 : spec.CL;
+
+            // tAAmin: Checker와 동일한 nCK 공식 → 이미 올바른 nCK면 Skip
+            int curTaa  = ReadLE16(data, TAA_MIN_OFFSET);
+            int nckTaa  = CalcNck(curTaa, tckPs);
+            if (nckTaa % 2 != 0) nckTaa++;   // 홀수 CL → +1 (Checker 동일)
+            if (nckTaa != cl)
+                WriteLE16(data, TAA_MIN_OFFSET, cl * tckPs);
+
+            // tRCDmin: 동일
+            int curTrcd = ReadLE16(data, TRCD_MIN_OFFSET);
+            if (CalcNck(curTrcd, tckPs) != spec.TrcdNck)
+                WriteLE16(data, TRCD_MIN_OFFSET, spec.TrcdNck * tckPs);
+
+            // tRPmin: 동일
+            int curTrp = ReadLE16(data, TRP_MIN_OFFSET);
+            if (CalcNck(curTrp, tckPs) != spec.TrpNck)
+                WriteLE16(data, TRP_MIN_OFFSET, spec.TrpNck * tckPs);
+
+            return true;
         }
 
         // ── P4: Mfr ID ────────────────────────────────────────────────────────
@@ -258,13 +284,14 @@ namespace SPD_Checker.Logic
             data[MODULE_MFR_OFFSET + 1] = RAMOS_MFR_B2;
         }
 
-        private static void FixDramMfrId(byte[] data, PartFields f)
+        internal static bool TryFixDramMfrId(byte[] data, char mfrCode)
         {
-            if (data.Length < DRAM_MFR_OFFSET + 2) return;
-            if (f.DramMfrCode == '\0') return;
-            if (!DRAM_MFR_MAP.TryGetValue(f.DramMfrCode, out var mfr)) return;
+            if (data.Length < DRAM_MFR_OFFSET + 2) return false;
+            if (mfrCode == '\0') return false;
+            if (!DRAM_MFR_MAP.TryGetValue(mfrCode, out var mfr)) return false;
             data[DRAM_MFR_OFFSET]     = mfr.b1;
             data[DRAM_MFR_OFFSET + 1] = mfr.b2;
+            return true;
         }
 
         // ── P5: XMP ───────────────────────────────────────────────────────────

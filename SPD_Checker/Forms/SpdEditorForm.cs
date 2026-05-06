@@ -24,10 +24,24 @@ namespace SPD_Checker.Forms
         private Dictionary<string, CheckResult> _checkResults = new Dictionary<string, CheckResult>();
 
         // ── UI ───────────────────────────────────────────────────────────────
-        private DataGridView _hexGrid;
-        private Panel        _rightPanel;
-        private Label        _rightInfoLabel;
-        private Label        _statusLabel;
+        private DataGridView   _hexGrid;
+        private Panel          _rightPanel;
+        private Label          _rightInfoLabel;
+        private Label          _statusLabel;
+        private HudTooltipForm _hudTooltip;
+
+        // Part Info 입력 컨트롤 (E-3.5 단계 1: PartNo TextBox만 활성)
+        private TextBox  _partNoTextBox;
+        private ComboBox _sourcingCombo;
+        private ComboBox _dimmTypeCombo;
+        private ComboBox _densityCombo;
+        private ComboBox _bankCombo;
+        private ComboBox _compCombo;
+        private ComboBox _dieDensityCombo;
+        private ComboBox _rankCombo;
+        private ComboBox _dramMfrCombo;
+        private ComboBox _speedCombo;
+        private bool     _suppressEvents;
 
         public AppMode? NextMode { get; private set; }
 
@@ -55,8 +69,9 @@ namespace SPD_Checker.Forms
             new KeyByteGroup { Offset = 34,  Length = 2, Name = "tRPmin",         CheckItem = "tRP min",                Decode = DecTimingPs    },
             new KeyByteGroup { Offset = 234, Length = 1, Name = "Module Rank",    CheckItem = "Module Rank",            Decode = DecRank        },
             new KeyByteGroup { Offset = 510, Length = 2, Name = "JEDEC CRC",      CheckItem = "CRC",                    Decode = DecCrcLE       },
-            new KeyByteGroup { Offset = 512, Length = 2, Name = "Module Mfr ID",  CheckItem = "Module Mfr ID",          Decode = DecMfr         },
-            new KeyByteGroup { Offset = 552, Length = 2, Name = "DRAM Mfr ID",    CheckItem = "DRAM Mfr ID",            Decode = DecMfr         },
+            new KeyByteGroup { Offset = 512, Length = 2,  Name = "Module Mfr ID",  CheckItem = "Module Mfr ID",          Decode = DecMfr         },
+            new KeyByteGroup { Offset = 521, Length = 30, Name = "Part Number",    CheckItem = "Part Number",            Decode = DecPartNumber  },
+            new KeyByteGroup { Offset = 552, Length = 2,  Name = "DRAM Mfr ID",   CheckItem = "DRAM Mfr ID",            Decode = DecMfr         },
             new KeyByteGroup { Offset = 640, Length = 3, Name = "XMP ID + Ver",   CheckItem = "[XMP] ID",               Decode = DecXmpId       },
             new KeyByteGroup { Offset = 643, Length = 1, Name = "XMP Profiles",   CheckItem = "[XMP] Profiles Enabled", Decode = DecXmpProfiles },
             new KeyByteGroup { Offset = 702, Length = 2, Name = "XMP Global CRC", CheckItem = "[XMP] Global CRC",       Decode = DecCrcLE       },
@@ -111,6 +126,9 @@ namespace SPD_Checker.Forms
             BackColor     = Color.FromArgb(245, 246, 248);
             FormClosing  += OnFormClosing;
 
+            _hudTooltip = new HudTooltipForm();
+            Shown += (s, e) => { if (_hudTooltip != null) _hudTooltip.Owner = this; };
+
             // 1. Hex grid (Fill) — added first
             _hexGrid = BuildHexGrid();
             Controls.Add(_hexGrid);
@@ -119,19 +137,37 @@ namespace SPD_Checker.Forms
             _rightPanel = new Panel
             {
                 Dock       = DockStyle.Right,
-                Width      = 380,
+                Width      = 500,
                 BackColor  = Color.White,
                 AutoScroll = true,
                 Padding    = new Padding(10)
             };
             _rightInfoLabel = new Label
             {
-                Dock      = DockStyle.Top,
-                AutoSize  = true,
-                Font      = new Font("Consolas", 9F),
-                ForeColor = Color.FromArgb(40, 40, 50)
+                AutoSize    = true,
+                MaximumSize = new Size(460, 0),
+                Margin      = new Padding(0, 4, 0, 0),
+                Font        = new Font("Consolas", 9F),
+                ForeColor   = Color.FromArgb(40, 40, 50)
             };
-            _rightPanel.Controls.Add(_rightInfoLabel);
+
+            var stack = new TableLayoutPanel
+            {
+                Dock          = DockStyle.Top,
+                AutoSize      = true,
+                AutoSizeMode  = AutoSizeMode.GrowAndShrink,
+                ColumnCount   = 1,
+                RowCount      = 2,
+                BackColor     = Color.White,
+                Padding       = new Padding(0)
+            };
+            stack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            stack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            stack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            stack.Controls.Add(BuildPartInfoSection(), 0, 0);
+            stack.Controls.Add(_rightInfoLabel,        0, 1);
+
+            _rightPanel.Controls.Add(stack);
             Controls.Add(_rightPanel);
 
             // 3. Status bar (Bottom)
@@ -157,6 +193,139 @@ namespace SPD_Checker.Forms
 
             // 5. Header (Top — last added appears at very top)
             Controls.Add(BuildHeader());
+        }
+
+        private Panel BuildPartInfoSection()
+        {
+            var panel = new Panel
+            {
+                AutoSize     = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                BackColor    = Color.White,
+                Padding      = new Padding(0, 0, 0, 8),
+                Dock         = DockStyle.Top
+            };
+
+            var grid = new TableLayoutPanel
+            {
+                AutoSize     = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                ColumnCount  = 2,
+                BackColor    = Color.White,
+                Dock         = DockStyle.Top,
+                Padding      = new Padding(0, 4, 0, 0)
+            };
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 95F));
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 350F));
+
+            int row = 0;
+
+            _partNoTextBox = new TextBox
+            {
+                Font      = new Font("Consolas", 9F),
+                Width     = 320,
+                MaxLength = 64   // 입력 단계에선 넉넉히, validation에서 30 이하 강제
+            };
+            _partNoTextBox.Leave   += (s, e) => OnPartNumberCommit();
+            _partNoTextBox.KeyDown += (s, e) =>
+            {
+                if (e.KeyCode == Keys.Enter)
+                {
+                    OnPartNumberCommit();
+                    e.SuppressKeyPress = true;
+                }
+                else if (e.KeyCode == Keys.Escape)
+                {
+                    _partNoTextBox.Text = GetPartNumberFromBytes();
+                    e.SuppressKeyPress = true;
+                }
+            };
+            AddPartInfoRow(grid, row++, "Part No",     _partNoTextBox);
+
+            _sourcingCombo   = MakePartCombo(new[] { "RM", "TM", "CM", "BM" });
+            AddPartInfoRow(grid, row++, "Sourcing",    _sourcingCombo);
+
+            _dimmTypeCombo   = MakePartCombo(new[] { "S (SODIMM)", "D (UDIMM)", "G (Gaming)", "C (Comp)" });
+            AddPartInfoRow(grid, row++, "DIMM Type",   _dimmTypeCombo);
+
+            _densityCombo    = MakePartCombo(new[] { "1G", "2G", "4G", "8G", "AG (16G)", "BG (32G)", "CG (64G)" });
+            AddPartInfoRow(grid, row++, "Density",     _densityCombo);
+
+            _bankCombo       = MakePartCombo(new[] { "4 (16Bk/1.2V)", "5 (32Bk/1.1V)", "6 (32Bk/1.35V)", "7 (32Bk/1.4V)" });
+            AddPartInfoRow(grid, row++, "Bank/VDD",    _bankCombo);
+
+            _compCombo       = MakePartCombo(new[] { "4 (X4)", "8 (X8)", "6 (X16)" });
+            AddPartInfoRow(grid, row++, "Composition", _compCombo);
+
+            _dieDensityCombo = MakePartCombo(new[] { "4 (4Gb)", "8 (8Gb)", "A (16Gb)", "H (24Gb)", "B (32Gb)" });
+            AddPartInfoRow(grid, row++, "Die Density", _dieDensityCombo);
+
+            _rankCombo       = MakePartCombo(new[] { "0 (Comp)", "1 (1R)", "2 (2R)" });
+            AddPartInfoRow(grid, row++, "Rank",        _rankCombo);
+
+            _dramMfrCombo    = MakePartCombo(new[] { "S (RAmos)", "G (GIGA)", "H (Hynix)", "M (Micron)", "C (CXMT)", "N (Nanya)" });
+            AddPartInfoRow(grid, row++, "DRAM Mfr",    _dramMfrCombo);
+
+            _speedCombo      = MakePartCombo(new[] { "QK (4800)", "WM (5600)", "CM (6000)", "CP (6400)", "CQ (6400)", "CR (6800)", "CS (7200)" });
+            AddPartInfoRow(grid, row++, "Speed",       _speedCombo);
+
+            _sourcingCombo.SelectedIndexChanged   += (s, e) => OnFieldChanged("Sourcing",    _sourcingCombo);
+            _dimmTypeCombo.SelectedIndexChanged   += (s, e) => OnFieldChanged("DIMM Type",   _dimmTypeCombo);
+            _densityCombo.SelectedIndexChanged    += (s, e) => OnFieldChanged("Density",     _densityCombo);
+            _bankCombo.SelectedIndexChanged       += (s, e) => OnFieldChanged("Bank/VDD",    _bankCombo);
+            _compCombo.SelectedIndexChanged       += (s, e) => OnFieldChanged("Composition", _compCombo);
+            _dieDensityCombo.SelectedIndexChanged += (s, e) => OnFieldChanged("Die Density", _dieDensityCombo);
+            _rankCombo.SelectedIndexChanged       += (s, e) => OnFieldChanged("Rank",        _rankCombo);
+            _dramMfrCombo.SelectedIndexChanged    += (s, e) => OnFieldChanged("DRAM Mfr",    _dramMfrCombo);
+            _speedCombo.SelectedIndexChanged      += (s, e) => OnFieldChanged("Speed",       _speedCombo);
+
+            var header = new Label
+            {
+                Text      = "─── Part Information ──────────────",
+                Dock      = DockStyle.Top,
+                AutoSize  = true,
+                Font      = new Font("Consolas", 9F),
+                ForeColor = Color.FromArgb(40, 40, 50),
+                Margin    = new Padding(0)
+            };
+
+            panel.Controls.Add(grid);
+            panel.Controls.Add(header);   // Dock=Top 추가 순서: header 나중에 추가 → 위쪽에 배치
+            return panel;
+        }
+
+        private static ComboBox MakePartCombo(string[] items)
+        {
+            var c = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Font          = new Font("Segoe UI", 9F),
+                Width         = 200
+            };
+            c.Items.AddRange(items);
+            return c;
+        }
+
+        private static void AddPartInfoRow(TableLayoutPanel grid, int row, string labelText, Control control)
+        {
+            grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            var lbl = new Label
+            {
+                Text      = labelText,
+                AutoSize  = true,
+                Anchor    = AnchorStyles.Left,
+                Margin    = new Padding(0, 6, 6, 4),
+                Font      = new Font("Segoe UI", 9F),
+                ForeColor = Color.FromArgb(60, 60, 60)
+            };
+            grid.Controls.Add(lbl,     0, row);
+            grid.Controls.Add(control, 1, row);
+        }
+
+        private string GetPartNumberFromBytes()
+        {
+            return Encoding.ASCII.GetString(_data,
+                SpdParser.PART_NUMBER_OFFSET, SpdParser.PART_NUMBER_LENGTH).TrimEnd(' ', '\0');
         }
 
         private Panel BuildHeader()
@@ -231,7 +400,8 @@ namespace SPD_Checker.Forms
                 AllowUserToResizeRows       = false,
                 AllowUserToResizeColumns    = false,
                 AllowUserToOrderColumns     = false,
-                RowHeadersWidth             = 56,
+                RowHeadersWidth             = 55,
+                RowHeadersWidthSizeMode     = DataGridViewRowHeadersWidthSizeMode.DisableResizing,
                 ColumnHeadersHeight         = 26,
                 ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
                 BackgroundColor             = Color.White,
@@ -252,8 +422,8 @@ namespace SPD_Checker.Forms
                     Font      = new Font("Consolas", 9F, FontStyle.Bold),
                     BackColor = Color.FromArgb(225, 230, 240),
                     ForeColor = Color.Black,
-                    Alignment = DataGridViewContentAlignment.MiddleRight,
-                    Padding   = new Padding(0, 0, 6, 0)
+                    Alignment = DataGridViewContentAlignment.MiddleCenter,
+                    Padding   = new Padding(0)
                 },
                 DefaultCellStyle = new DataGridViewCellStyle
                 {
@@ -273,31 +443,52 @@ namespace SPD_Checker.Forms
                     MaxInputLength = 2
                 });
             }
-            grid.RowHeadersWidthSizeMode = DataGridViewRowHeadersWidthSizeMode.EnableResizing;
             grid.Rows.Add(ROWS);
             for (int r = 0; r < ROWS; r++)
-                grid.Rows[r].HeaderCell.Value = r.ToString("X2");   // 00 ~ 3F (high byte of 16-byte row)
+                grid.Rows[r].HeaderCell.Value = r.ToString("X2");   // 00 ~ 3F
 
-            grid.CellEndEdit += OnCellEndEdit;
+            grid.ShowCellToolTips = false;
+            grid.CellEndEdit      += OnCellEndEdit;
+            grid.CellClick        += OnGridCellClick;
+            grid.KeyDown          += (s, e) => { if (e.KeyCode == Keys.Escape) _hudTooltip?.Hide(); };
             return grid;
         }
 
-        // ── Key Byte 툴팁 (셀 hover 시 어떤 byte인지 설명) ──────────────────
-        private void ApplyKeyByteTooltips()
+        // ── HUD Tooltip ──────────────────────────────────────────────────────
+        private static KeyByteGroup? FindKeyByteGroup(int byteOffset)
         {
             foreach (var g in KEY_BYTE_GROUPS)
-            {
-                string range = g.Length == 1
-                    ? $"Byte 0x{g.Offset:X3}"
-                    : $"Byte 0x{g.Offset:X3}-0x{g.Offset + g.Length - 1:X3}";
-                string tip = $"{range} — {g.Name}";
-                for (int i = 0; i < g.Length; i++)
-                {
-                    int off = g.Offset + i;
-                    if (off >= SPD_SIZE) continue;
-                    _hexGrid[off % COLS, off / COLS].ToolTipText = tip;
-                }
-            }
+                if (byteOffset >= g.Offset && byteOffset < g.Offset + g.Length)
+                    return g;
+            return null;
+        }
+
+        private void OnGridCellClick(object sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex < 0 || e.ColumnIndex < 0) { _hudTooltip?.Hide(); return; }
+            int byteOffset = e.RowIndex * COLS + e.ColumnIndex;
+            var grp = FindKeyByteGroup(byteOffset);
+            if (grp == null) { _hudTooltip?.Hide(); return; }
+
+            var grid     = (DataGridView)sender;
+            var cellRect = grid.GetCellDisplayRectangle(e.ColumnIndex, e.RowIndex, false);
+            if (cellRect.IsEmpty) return;
+
+            var anchor = grid.PointToScreen(new Point(cellRect.Right, cellRect.Top));
+
+            string addr = grp.Value.Length == 1
+                ? grp.Value.Offset.ToString("X3")
+                : $"{grp.Value.Offset:X3}-{grp.Value.Offset + grp.Value.Length - 1:X3}";
+
+            var (raw, meaning) = grp.Value.Decode(_data, grp.Value.Offset);
+
+            bool? pass = null;
+            if (grp.Value.CheckItem != null && _checkResults.TryGetValue(grp.Value.CheckItem, out var cr))
+                pass = cr.Status == CheckStatus.Pass ? true
+                     : cr.Status == CheckStatus.Fail ? false
+                     : (bool?)null;
+
+            _hudTooltip.ShowAt(anchor, addr, grp.Value.Name, raw, meaning, pass);
         }
 
         // ── File Operations ──────────────────────────────────────────────────
@@ -358,7 +549,9 @@ namespace SPD_Checker.Forms
 
         private void OnFormClosing(object sender, FormClosingEventArgs e)
         {
-            if (!ConfirmDirtyDiscard()) e.Cancel = true;
+            if (!ConfirmDirtyDiscard()) { e.Cancel = true; return; }
+            _hudTooltip?.Dispose();
+            _hudTooltip = null;
         }
 
         // ── Hex Grid ↔ Data Sync ─────────────────────────────────────────────
@@ -374,24 +567,50 @@ namespace SPD_Checker.Forms
         private static readonly Color CLR_PASS        = Color.FromArgb(220, 245, 220);
         private static readonly Color CLR_FAIL        = Color.FromArgb(250, 215, 215);
 
+        private void SetCellBg(int offset, Color color)
+        {
+            var cell = _hexGrid[offset % COLS, offset / COLS];
+            if (cell.Style.BackColor != color)
+                cell.Style.BackColor = color;
+        }
+
         private void HighlightKeyBytes()
         {
             foreach (var g in KEY_BYTE_GROUPS)
             {
                 Color color = CLR_KEY_DEFAULT;
-                if (g.CheckItem != null && _checkResults.TryGetValue(g.CheckItem, out var r))
+                CheckResult r = null;
+                if (g.CheckItem != null && _checkResults.TryGetValue(g.CheckItem, out r))
                 {
                     if (r.Status == CheckStatus.Pass)      color = CLR_PASS;
                     else if (r.Status == CheckStatus.Fail) color = CLR_FAIL;
                 }
+
+                // Part Number FAIL → byte 단위 차이만 빨강, 일치 부분은 초록
+                if (g.CheckItem == "Part Number" && r != null && r.Status == CheckStatus.Fail)
+                {
+                    string expected = (r.Expected ?? "").PadRight(g.Length, ' ');
+                    for (int i = 0; i < g.Length; i++)
+                    {
+                        int off = g.Offset + i;
+                        if (off >= SPD_SIZE) continue;
+                        byte actByte = _data[off];
+                        char expCh   = i < expected.Length ? expected[i] : ' ';
+                        bool match = expCh == ' '
+                            ? (actByte == 0x20 || actByte == 0x00)
+                            : char.ToUpperInvariant((char)actByte) == char.ToUpperInvariant(expCh);
+                        SetCellBg(off, match ? CLR_PASS : CLR_FAIL);
+                    }
+                    continue;
+                }
+
                 for (int i = 0; i < g.Length; i++)
                 {
                     int off = g.Offset + i;
                     if (off >= SPD_SIZE) continue;
-                    _hexGrid[off % COLS, off / COLS].Style.BackColor = color;
+                    SetCellBg(off, color);
                 }
             }
-            ApplyKeyByteTooltips();
         }
 
         private void OnCellEndEdit(object sender, DataGridViewCellEventArgs e)
@@ -412,6 +631,11 @@ namespace SPD_Checker.Forms
             else
             {
                 _hexGrid[e.ColumnIndex, e.RowIndex].Value = _data[address].ToString("X2");
+                MessageBox.Show(this,
+                    $"잘못된 hex 값입니다: '{val}'\n" +
+                    $"00 ~ FF 범위의 16진수만 허용됩니다 (한글/특수문자/3자리 이상 불가).",
+                    "Byte 입력 오류",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 
@@ -429,9 +653,27 @@ namespace SPD_Checker.Forms
                 if (!_checkResults.ContainsKey(r.CheckItem))
                     _checkResults[r.CheckItem] = r;
 
+            // 파일 로드 시: 파일명 vs bytes 521~550 Part Number 대조 (AppendKeyBytes 전에)
+            if (_filePath != null)
+            {
+                string expectedPn = SpdParser.StripSuffix(Path.GetFileNameWithoutExtension(_filePath));
+                string actualPn   = Encoding.ASCII.GetString(_data,
+                    SpdParser.PART_NUMBER_OFFSET, SpdParser.PART_NUMBER_LENGTH).TrimEnd(' ', '\0');
+                bool pnPass = string.Equals(expectedPn, actualPn, StringComparison.OrdinalIgnoreCase);
+                _checkResults["Part Number"] = new CheckResult
+                {
+                    FileName  = GetDisplayName(),
+                    CheckItem = "Part Number",
+                    Expected  = expectedPn,
+                    Actual    = actualPn,
+                    Pass      = pnPass,
+                    Status    = pnPass ? CheckStatus.Pass : CheckStatus.Fail
+                };
+            }
+
+            UpdatePartInfoControls();
+
             var sb = new StringBuilder();
-            AppendPartInfo(sb);
-            sb.AppendLine();
             AppendTemplate(sb);
             sb.AppendLine();
             AppendKeyBytes(sb);
@@ -442,20 +684,279 @@ namespace SPD_Checker.Forms
             UpdateTitle();
         }
 
-        private void AppendPartInfo(StringBuilder sb)
+        // ── Part Info 컨트롤 갱신 (bytes → UI) ─────────────────────────────
+        private void UpdatePartInfoControls()
         {
-            sb.AppendLine("─── Part Information ─────────────");
-            sb.AppendLine();
-            sb.AppendLine($"  Part No   {_info.PartNumberAscii ?? "-"}");
-            sb.AppendLine($"  Speed     {_info.SpeedName ?? "-"}");
-            sb.AppendLine($"  Density   {(_info.DensityGb.HasValue ? _info.DensityGb + " GB" : "-")}");
-            sb.AppendLine($"  Module    {_info.ModuleTypeName ?? "-"}");
-            sb.AppendLine($"  Rank      {_info.RankName ?? "-"}");
-            sb.AppendLine($"  Mfr (Mod) {_info.ModuleMfrName ?? "-"}");
-            sb.AppendLine($"  Mfr (DRAM){_info.DramMfrName ?? "-"}");
-            sb.AppendLine($"  XMP       {(_info.XmpEnabled ? "✓ Enabled" : "✗ Disabled")}");
-            if (!string.IsNullOrEmpty(_info.Fields.Error))
-                sb.AppendLine($"  ⚠ {_info.Fields.Error}");
+            if (_partNoTextBox == null) return;
+            _suppressEvents = true;
+            try
+            {
+                _partNoTextBox.Text = GetPartNumberFromBytes();
+
+                var f = _info != null ? _info.Fields : default(PartFields);
+                SelectComboByPrefix(_sourcingCombo,   f.Sourcing);
+                SelectComboByPrefix(_dimmTypeCombo,   f.DimmType        != '\0' ? f.DimmType.ToString()        : null);
+                SelectComboByPrefix(_densityCombo,    f.DensityCode);
+                SelectComboByPrefix(_bankCombo,       f.BankCode        != '\0' ? f.BankCode.ToString()        : null);
+                SelectComboByPrefix(_compCombo,       f.CompositionCode != '\0' ? f.CompositionCode.ToString() : null);
+                SelectComboByPrefix(_dieDensityCombo, f.DieDensityCode  != '\0' ? f.DieDensityCode.ToString()  : null);
+                SelectComboByPrefix(_rankCombo,       f.RankCode        != '\0' ? f.RankCode.ToString()        : null);
+                SelectComboByPrefix(_dramMfrCombo,    f.DramMfrCode     != '\0' ? f.DramMfrCode.ToString()     : null);
+                SelectComboByPrefix(_speedCombo,      f.SpeedCode);
+            }
+            finally
+            {
+                _suppressEvents = false;
+            }
+        }
+
+        private static void SelectComboByPrefix(ComboBox c, string prefix)
+        {
+            if (c == null) return;
+            if (string.IsNullOrEmpty(prefix)) { c.SelectedIndex = -1; return; }
+            for (int i = 0; i < c.Items.Count; i++)
+            {
+                string item = c.Items[i].ToString();
+                if (string.Equals(item, prefix, StringComparison.OrdinalIgnoreCase)
+                    || item.StartsWith(prefix + " ", StringComparison.OrdinalIgnoreCase))
+                {
+                    c.SelectedIndex = i;
+                    return;
+                }
+            }
+            c.SelectedIndex = -1;
+        }
+
+        // ── Part Number TextBox 입력 검증 + 적용 ─────────────────────────────
+        private void OnPartNumberCommit()
+        {
+            if (_suppressEvents) return;
+            if (_partNoTextBox == null) return;
+
+            string newPN     = _partNoTextBox.Text ?? "";
+            string currentPN = GetPartNumberFromBytes();
+            if (newPN == currentPN) return;
+
+            string error = ValidatePartNumber(newPN);
+            if (error != null)
+            {
+                MessageBox.Show(this, error, "Part Number 입력 오류",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                _suppressEvents = true;
+                try { _partNoTextBox.Text = currentPN; }
+                finally { _suppressEvents = false; }
+                return;
+            }
+
+            var ascii = Encoding.ASCII.GetBytes(newPN.PadRight(SpdParser.PART_NUMBER_LENGTH, ' '));
+            Array.Copy(ascii, 0, _data, SpdParser.PART_NUMBER_OFFSET, SpdParser.PART_NUMBER_LENGTH);
+            for (int i = 0; i < SpdParser.PART_NUMBER_LENGTH; i++)
+            {
+                int off = SpdParser.PART_NUMBER_OFFSET + i;
+                _hexGrid[off % COLS, off / COLS].Value = _data[off].ToString("X2");
+            }
+            _dirty = true;
+            RefreshDisplay();
+        }
+
+        private static string ValidatePartNumber(string pn)
+        {
+            foreach (char ch in pn)
+                if (ch < 0x20 || ch > 0x7E)
+                    return $"ASCII 인쇄 가능 문자만 허용됩니다 (한글/제어문자 불가).\n" +
+                           $"잘못된 문자: '{ch}' (코드 0x{(int)ch:X4})";
+
+            if (pn.Length == 0 || pn.Length > SpdParser.PART_NUMBER_LENGTH)
+                return $"Part Number 길이는 1~{SpdParser.PART_NUMBER_LENGTH}자여야 합니다 (현재: {pn.Length}자).";
+
+            var f = SpdParser.ParsePartFields(SpdParser.StripSuffix(pn));
+            if (!f.Valid)
+                return $"Part Number 형식이 올바르지 않습니다.\n오류: {f.Error}";
+
+            return null;
+        }
+
+        // ── ComboBox 필드 변경 핸들러 ────────────────────────────────────────
+        private void OnFieldChanged(string fieldName, ComboBox combo)
+        {
+            if (_suppressEvents) return;
+            if (combo.SelectedIndex < 0) return;
+
+            // 변경 전 상태 저장 (실패 시 복원용)
+            byte[] oldData = (byte[])_data.Clone();
+
+            // 콤보 항목 첫 토큰 = 코드 (예: "AG (16G)" → "AG", "1G" → "1G")
+            string item    = combo.SelectedItem.ToString();
+            string newCode = item.Split(' ')[0];
+
+            string error = ApplyFieldChange(fieldName, newCode);
+            if (error != null)
+            {
+                // 복원: bytes + 컨트롤
+                Array.Copy(oldData, _data, _data.Length);
+                MessageBox.Show(this, error,
+                    $"{fieldName} 변경 오류",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                _suppressEvents = true;
+                try { SyncGridFromData(); UpdatePartInfoControls(); }
+                finally { _suppressEvents = false; }
+                return;
+            }
+
+            _dirty = true;
+            SyncGridFromData();
+            RefreshDisplay();
+        }
+
+        private string ApplyFieldChange(string fieldName, string newCode)
+        {
+            if (string.IsNullOrEmpty(newCode))
+                return "코드가 비어 있습니다.";
+
+            string currentPN = GetPartNumberFromBytes();
+            var cur = SpdParser.ParsePartFields(SpdParser.StripSuffix(currentPN));
+            if (!cur.Valid)
+                return $"현재 Part Number를 파싱할 수 없습니다: {cur.Error}\n" +
+                       $"Part Number TextBox에 유효한 값을 먼저 입력하세요.";
+
+            string newPN = currentPN;
+            char   c0    = newCode[0];
+
+            switch (fieldName)
+            {
+                case "Sourcing":
+                    if (newCode.Length != 2) return "Sourcing 코드는 2자여야 합니다.";
+                    newPN = newCode + currentPN.Substring(Math.Min(2, currentPN.Length));
+                    break;
+
+                case "DIMM Type":
+                    newPN = ReplaceBodyChar(currentPN, 1, c0);
+                    if (!SpdFixer.TryFixModuleType(_data, c0)) return "DIMM Type 코드 오류.";
+                    break;
+
+                case "Density":
+                    if (newCode.Length != 2) return "Density 코드는 2자여야 합니다 (예: 8G, AG).";
+                    newPN = ReplaceBodyDensity(currentPN, newCode);
+                    break;
+
+                case "Bank/VDD":
+                    if (!ValidateBankSpeed(c0, cur.SpeedCode))
+                        return $"Bank '{c0}'는 Speed '{cur.SpeedCode}'와 호환되지 않습니다.\n" +
+                               $"허용 조합: 4800/5600 → 5, 6000/6400 → 6, 6800/7200 → 7";
+                    newPN = ReplaceBodyChar(currentPN, 4, c0);
+                    if (!SpdFixer.TryFixBankGroups(_data, c0)) return "Bank 코드 오류.";
+                    break;
+
+                case "Composition":
+                    newPN = ReplaceBodyChar(currentPN, 5, c0);
+                    if (!SpdFixer.TryFixIoWidth(_data, c0)) return "Composition 코드 오류.";
+                    break;
+
+                case "Die Density":
+                    newPN = ReplaceBodyChar(currentPN, 6, c0);
+                    if (!SpdFixer.TryFixDieDensity(_data, c0)) return "Die Density 코드 오류.";
+                    break;
+
+                case "Rank":
+                    newPN = ReplaceBodyChar(currentPN, 7, c0);
+                    if (c0 == '0') break;   // Comp: byte 변경 없음, PN만 갱신
+                    if (!SpdFixer.TryFixRank(_data, c0)) return "Rank 코드 오류.";
+                    break;
+
+                case "DRAM Mfr":
+                    newPN = ReplaceDramMfr(currentPN, c0);
+                    if (!SpdFixer.TryFixDramMfrId(_data, c0)) return "DRAM Mfr 코드 오류.";
+                    break;
+
+                case "Speed":
+                    if (!ValidateBankSpeed(cur.BankCode, newCode))
+                        return $"Speed '{newCode}'는 Bank '{cur.BankCode}'와 호환되지 않습니다.\n" +
+                               $"허용 조합: 4800/5600 → 5, 6000/6400 → 6, 6800/7200 → 7";
+                    if (string.IsNullOrEmpty(cur.SpeedCode))
+                        return "현재 Part Number에서 Speed 코드를 찾을 수 없어 변경할 수 없습니다.";
+                    newPN = ReplaceSpeedInSuffix(currentPN, cur.SpeedCode, newCode);
+                    if (!SpdFixer.TryFixJedecTimings(_data, newCode))
+                        return $"Speed 코드 '{newCode}' 매핑 없음.";
+                    break;
+
+                default:
+                    return $"알 수 없는 필드: {fieldName}";
+            }
+
+            // 변경 후 PN 검증 (길이 + 파싱)
+            if (newPN.Length > SpdParser.PART_NUMBER_LENGTH)
+                return $"변경 후 Part Number 길이 초과 ({newPN.Length} > {SpdParser.PART_NUMBER_LENGTH}).";
+            var newFields = SpdParser.ParsePartFields(SpdParser.StripSuffix(newPN));
+            if (!newFields.Valid)
+                return $"변경 후 Part Number 형식 오류: {newFields.Error}";
+
+            // bytes 521~550 갱신
+            var ascii = Encoding.ASCII.GetBytes(newPN.PadRight(SpdParser.PART_NUMBER_LENGTH, ' '));
+            Array.Copy(ascii, 0, _data, SpdParser.PART_NUMBER_OFFSET, SpdParser.PART_NUMBER_LENGTH);
+            return null;
+        }
+
+        // ── Bank ↔ Speed 조합 검증 ───────────────────────────────────────────
+        private static bool ValidateBankSpeed(char bankCode, string speedCode)
+        {
+            if (string.IsNullOrEmpty(speedCode)) return true;
+            switch (speedCode.ToUpperInvariant())
+            {
+                case "QK":
+                case "WM": return bankCode == '5';
+                case "CM":
+                case "CP":
+                case "CQ": return bankCode == '6';
+                case "CR":
+                case "CS": return bankCode == '7';
+                default:   return true;
+            }
+        }
+
+        // ── Part Number 부분 치환 헬퍼 ───────────────────────────────────────
+        // PN core 위치(prefix 2자 제외)에서 1글자 교체
+        private static string ReplaceBodyChar(string pn, int corePos, char newCh)
+        {
+            int dashIdx = pn.IndexOf('-');
+            string body  = dashIdx >= 0 ? pn.Substring(0, dashIdx) : pn;
+            string after = dashIdx >= 0 ? pn.Substring(dashIdx)    : "";
+            int absPos = 2 + corePos;
+            if (absPos >= body.Length) return pn;
+            var chars = body.ToCharArray();
+            chars[absPos] = newCh;
+            return new string(chars) + after;
+        }
+
+        // Density는 2자 (core[2..3])
+        private static string ReplaceBodyDensity(string pn, string newDensity)
+        {
+            int dashIdx = pn.IndexOf('-');
+            string body  = dashIdx >= 0 ? pn.Substring(0, dashIdx) : pn;
+            string after = dashIdx >= 0 ? pn.Substring(dashIdx)    : "";
+            if (body.Length < 6) return pn;
+            return body.Substring(0, 4) + newDensity + body.Substring(6) + after;
+        }
+
+        // DRAM Mfr는 dash 직후 1자 (suffix[0])
+        private static string ReplaceDramMfr(string pn, char newMfr)
+        {
+            int dashIdx = pn.IndexOf('-');
+            if (dashIdx < 0 || dashIdx + 1 >= pn.Length) return pn;
+            var chars = pn.ToCharArray();
+            chars[dashIdx + 1] = newMfr;
+            return new string(chars);
+        }
+
+        // Speed 코드는 suffix 내 임의 위치 — substring 검색해서 교체
+        private static string ReplaceSpeedInSuffix(string pn, string oldSpeed, string newSpeed)
+        {
+            int dashIdx = pn.IndexOf('-');
+            if (dashIdx < 0) return pn;
+            string suffix = pn.Substring(dashIdx + 1);
+            int idx = suffix.IndexOf(oldSpeed, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0) return pn;
+            string newSuffix = suffix.Substring(0, idx) + newSpeed + suffix.Substring(idx + oldSpeed.Length);
+            return pn.Substring(0, dashIdx + 1) + newSuffix;
         }
 
         private void AppendTemplate(StringBuilder sb)
@@ -616,6 +1117,14 @@ namespace SPD_Checker.Forms
         }
 
         // ── Key Byte 디코더 (raw 표시 + 의미 텍스트) ────────────────────────
+        private static (string Raw, string Meaning) DecPartNumber(byte[] d, int o)
+        {
+            string ascii = Encoding.ASCII.GetString(d, o, SpdParser.PART_NUMBER_LENGTH)
+                                         .TrimEnd(' ', '\0');
+            string raw = ascii.Length > 10 ? ascii.Substring(0, 9) + "…" : ascii;
+            return (raw, "bytes 209~226");
+        }
+
         private static (string Raw, string Meaning) DecDramType(byte[] d, int o)
         {
             byte b = d[o];
