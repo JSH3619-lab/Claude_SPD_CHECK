@@ -212,18 +212,18 @@ namespace SPD_Checker.Logic
         }
 
         // ── 골든 샘플 템플릿 파일명 조립 ────────────────────────────────────
-        // 형식: TPL_{Src}_{DRAM}{DIMM}{Density}{Bank}{IO}{Die}{Rank}_{IC}_{Speed}.sp5
-        // 예: RMRDAG58A1P-GPWRRWM7-TN → TPL_RM_RDAG58A1_S1_WM.sp5
+        // 형식: TPL_{DIMM}{Density}{Bank}{IO}{Die}{Rank}_{Speed}.sp5
+        // 예: RMRDAG58A1P-GPWRRWM7-TN → TPL_DAG58A1_WM.sp5
+        // Sourcing(RM/TM/CM/BM), DRAM Type(R), DRAM Mfr 는 제외
+        // — Sourcing/DRAM Type은 PN에만 영향, DRAM Mfr는 ApplyFixes()가 552~553 자동 재기입
         public static string BuildTemplateFileName(PartFields f)
         {
             if (!f.Valid)
                 return null;
 
             string speed = f.SpeedCode ?? "??";
-            string ic    = DramMfrCodeToIc(f.DramMfrCode);
-            return $"TPL_{f.Sourcing}_{f.DramTypeCode}{f.DimmType}{f.DensityCode}" +
-                   $"{f.BankCode}{f.CompositionCode}{f.DieDensityCode}{f.RankCode}_" +
-                   $"{ic}_{speed}.sp5";
+            return $"TPL_{f.DimmType}{f.DensityCode}" +
+                   $"{f.BankCode}{f.CompositionCode}{f.DieDensityCode}{f.RankCode}_{speed}.sp5";
         }
 
         // ── CRC-16 (poly=0x1021, init=0x0000) ───────────────────────────────

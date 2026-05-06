@@ -22,8 +22,32 @@ namespace SPD_Checker.Forms
 
         public AppMode? NextMode { get; private set; }
 
+        // ── 설정 파일 (앱 실행 경로에 저장) ─────────────────────────────────
+        private static readonly string _settingsFile =
+            Path.Combine(
+                Path.GetDirectoryName(Application.ExecutablePath) ?? "",
+                "autogen_settings.cfg");
+
+        private static string LoadSavedFolder()
+        {
+            try
+            {
+                if (!File.Exists(_settingsFile)) return null;
+                string path = File.ReadAllText(_settingsFile, System.Text.Encoding.UTF8).Trim();
+                return Directory.Exists(path) ? path : null;
+            }
+            catch { return null; }
+        }
+
+        private static void SaveFolder(string path)
+        {
+            try { File.WriteAllText(_settingsFile, path, System.Text.Encoding.UTF8); }
+            catch { }
+        }
+
         public AutoGenForm()
         {
+            _folderPath = LoadSavedFolder();
             BuildUI();
             UpdateFolderUi();
         }
@@ -224,6 +248,7 @@ namespace SPD_Checker.Forms
                 dlg.ShowNewFolderButton = true;
                 if (dlg.ShowDialog(this) != DialogResult.OK) return;
                 _folderPath = dlg.SelectedPath;
+                SaveFolder(_folderPath);
                 UpdateFolderUi();
             }
         }

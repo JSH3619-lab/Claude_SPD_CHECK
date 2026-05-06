@@ -106,14 +106,17 @@ QR 입력 (Part No) → 폴더에 <PartNo>.sp5 존재?
 ### 3.2 골든 샘플 명명 규칙
 
 ```
-TPL_{Src}_{DRAM}{DIMM}{Density}{Bank}{IO}{Die}{Rank}_{Speed}.sp5
+TPL_{DIMM}{Density}{Bank}{IO}{Die}{Rank}_{Speed}.sp5
 ```
+
+Sourcing(RM/TM/CM/BM), DRAM Type(R), DRAM Mfr 는 제외 — 모두 Auto-Gen 시 자동 치환됨.
 
 | Part No (입력) | 골든 샘플 |
 |---|---|
-| `RMRDAG58A1P-GPWRRWM7-TN` | `TPL_RM_RDAG58A1_WM.sp5` |
-| `RMRDBG68B2P-GPWRRCM6-TN` | `TPL_RM_RDBG68B2_CM.sp5` |
-| `TMRDAG58A1P-GPWNRWM7-TN` | `TPL_TM_RDAG58A1_WM.sp5` |
+| `RMRDAG58A1P-GPWRRWM7-TN` | `TPL_DAG58A1_WM.sp5` |
+| `RMRDBG68B2P-GPWRRCM6-TN` | `TPL_DBG68B2_CM.sp5` |
+| `TMRDAG58A1P-GPWNRWM7-TN` | `TPL_DAG58A1_WM.sp5` ← RM과 동일 템플릿 사용 |
+| `CMRDAG58A1P-GPWRRWM7-TN` | `TPL_DAG58A1_WM.sp5` ← CM도 동일 템플릿 사용 |
 
 `SpdParser.BuildTemplateFileName(PartFields)` 구현 완료.
 
@@ -122,8 +125,8 @@ TPL_{Src}_{DRAM}{DIMM}{Density}{Bank}{IO}{Die}{Rank}_{Speed}.sp5
 ```
 SPD_Folder/
 ├── Templates/                     ← 엔지니어가 직접 배치
-│   ├── TPL_RM_RDAG58A1_WM.sp5
-│   └── … (10~20개)
+│   ├── TPL_DAG58A1_WM.sp5
+│   └── … (Sourcing/Mfr 관계없이 시스템 구성별 1개)
 ├── AutoGen_Log.csv                ← 자동생성 이력
 └── (실제 SPD 파일들)
 ```

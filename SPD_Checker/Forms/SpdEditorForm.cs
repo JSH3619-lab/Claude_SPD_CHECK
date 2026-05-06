@@ -17,13 +17,15 @@ namespace SPD_Checker.Forms
         private const int ROWS = SPD_SIZE / COLS;   // 64
 
         // ── State ────────────────────────────────────────────────────────────
-        private byte[]  _data = new byte[SPD_SIZE];
+        private byte[]  _data         = new byte[SPD_SIZE];
+        private byte[]  _originalData = new byte[SPD_SIZE]; // 마지막 로드/저장 시점 스냅샷
         private SpdInfo _info;
         private string  _filePath;
         private bool    _dirty;
         private Dictionary<string, CheckResult> _checkResults = new Dictionary<string, CheckResult>();
 
         // ── UI ───────────────────────────────────────────────────────────────
+        private Button         _btnRevert;
         private DataGridView   _hexGrid;
         private Panel          _rightPanel;
         private Label          _rightInfoLabel;
@@ -360,6 +362,7 @@ namespace SPD_Checker.Forms
             var btnSaveAs  = MakeToolBtn("Save As",       Color.FromArgb(20, 155, 175),  330, 90);
             var btnCrc     = MakeToolBtn("🔄  CRC 재계산", Color.FromArgb(170, 70, 20),   440, 140);
             var btnAutoFix = MakeToolBtn("🔧  자동 수정",  Color.FromArgb(120, 40, 170),  590, 130);
+            _btnRevert     = MakeToolBtn("↩  초기화",     Color.FromArgb(160, 90, 20),   730, 110);
 
             btnLoad.Click    += (s, e) => LoadFileDialog();
             btnNew.Click     += (s, e) => NewFile();
@@ -367,8 +370,9 @@ namespace SPD_Checker.Forms
             btnSaveAs.Click  += (s, e) => SaveFileAs();
             btnCrc.Click     += (s, e) => RecalculateCrcs();
             btnAutoFix.Click += (s, e) => AutoFix();
+            _btnRevert.Click += (s, e) => RevertFile();
 
-            toolbar.Controls.AddRange(new Control[] { btnLoad, btnNew, btnSave, btnSaveAs, btnCrc, btnAutoFix });
+            toolbar.Controls.AddRange(new Control[] { btnLoad, btnNew, btnSave, btnSaveAs, btnCrc, btnAutoFix, _btnRevert });
             return toolbar;
         }
 
@@ -495,9 +499,10 @@ namespace SPD_Checker.Forms
         private void NewFile()
         {
             if (!ConfirmDirtyDiscard()) return;
-            _data     = new byte[SPD_SIZE];
-            _filePath = null;
-            _dirty    = false;
+            _data         = new byte[SPD_SIZE];
+            _originalData = new byte[SPD_SIZE];
+            _filePath     = null;
+            _dirty        = false;
             SyncGridFromData();
             RefreshDisplay();
         }
@@ -521,8 +526,9 @@ namespace SPD_Checker.Forms
                 byte[] raw = SpdParser.ParseFile(path);
                 _data = new byte[SPD_SIZE];
                 Array.Copy(raw, _data, Math.Min(raw.Length, SPD_SIZE));
-                _filePath = path;
-                _dirty    = false;
+                _originalData = (byte[])_data.Clone();
+                _filePath     = path;
+                _dirty        = false;
                 SyncGridFromData();
                 RefreshDisplay();
 
@@ -989,6 +995,27 @@ namespace SPD_Checker.Forms
             }
         }
 
+        // ── Revert (마지막 로드/저장 상태로 복원) ────────────────────────────
+        private void RevertFile()
+        {
+            if (!_dirty)
+            {
+                MessageBox.Show(this, "변경된 내용이 없습니다.",
+                    "초기화", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var r = MessageBox.Show(this,
+                "마지막으로 로드/저장한 상태로 되돌립니다.\n수정 내용이 모두 사라집니다. 계속하시겠습니까?",
+                "초기화 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (r != DialogResult.Yes) return;
+
+            Array.Copy(_originalData, _data, SPD_SIZE);
+            _dirty = false;
+            SyncGridFromData();
+            RefreshDisplay();
+        }
+
         // ── Auto-Fix ─────────────────────────────────────────────────────────
         private void AutoFix()
         {
@@ -1286,8 +1313,9 @@ namespace SPD_Checker.Forms
                 else
                     File.WriteAllText(path, SpdFixer.SerializeToSp5(_data), Encoding.ASCII);
 
-                _filePath = path;
-                _dirty    = false;
+                _originalData = (byte[])_data.Clone();
+                _filePath     = path;
+                _dirty        = false;
                 UpdateStatusBar();
                 UpdateTitle();
             }

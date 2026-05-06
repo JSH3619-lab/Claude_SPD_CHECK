@@ -40,6 +40,7 @@
 | XMP | XMP 3.0 검증 (6000 이상 속도 코드 파트: CM/CQ/CR/CS) | ✅ 완료 |
 | Fix | FAIL 항목 자동 수정 (Save as _FIXED / Overwrite 2가지 모드) | ✅ 완료 |
 | Editor | SPD Editor / Auto-Gen 3-mode 구조 — E-0~E-7 + E-3.5 모두 완료 (LaunchForm / Hex Grid + 실시간 검증 / Auto-Fix / Save·Load / Auto-Gen / Mode 드롭다운 + FAIL 점프 / Part Info Form 입력 + 조합 검증) | ✅ 완료 (→ phase_editor_autogen.md) |
+| UI/UX | LaunchForm 버튼 줄 넘김 제거 (창 720px, Panel 기반 버튼) / AutoGen 폴더 경로 영속 저장 (autogen_settings.cfg) / Editor 초기화 버튼 (↩ 마지막 로드·저장 상태로 복원) | ✅ 완료 |
 
 ### XMP 3.0 검증 항목 (Phase XMP 세부)
 
@@ -77,14 +78,26 @@ C:\JSH_Folder\SPD_Check_PGM\
 │       ├── part_number_parsing.md   ← 파트 넘버 파싱 규칙 + Speed 코드 표
 │       ├── jesd400_bytes.md         ← JESD400-5C Byte 위치 + JEDEC ID 전체 참조
 │       ├── phase4_crc.md            ← Phase 4 CRC 설계 (구현 가이드 포함)
-│       └── xmp_bytes.md             ← Intel XMP 3.0 전체 Byte 위치 참조
+│       ├── xmp_bytes.md             ← Intel XMP 3.0 전체 Byte 위치 참조
+│       └── phase_editor_autogen.md  ← Editor / Auto-Gen 기획 + 진행 현황
 └── SPD_Checker\
     ├── SPD_Checker.csproj
     ├── Program.cs
     ├── MainForm.cs
-    ├── Logic\SpdChecker.cs          ← 핵심 검증 로직
-    ├── Logic\SpdFixer.cs            ← FAIL 항목 자동 수정 로직
-    └── Models\CheckResult.cs
+    ├── Forms\
+    │   ├── LaunchForm.cs            ← 모드 선택 화면 (Check / Editor / Auto-Gen)
+    │   ├── SpdEditorForm.cs         ← SPD Editor (Hex Grid + 검증 + Auto-Fix + 초기화)
+    │   ├── AutoGenForm.cs           ← Auto-Gen (QR → 골든샘플 자동 생성, 폴더 영속 저장)
+    │   ├── ModeDropdown.cs          ← 모드 전환 드롭다운
+    │   └── HudTooltipForm.cs        ← Key Byte 툴팁 HUD
+    ├── Logic\
+    │   ├── SpdChecker.cs            ← 핵심 검증 로직
+    │   ├── SpdFixer.cs              ← FAIL 항목 자동 수정 로직
+    │   ├── SpdParser.cs             ← 공유 타입·파싱·CRC·템플릿명 조립
+    │   └── SpdAutoGen.cs            ← Auto-Gen 생성 로직
+    └── Models\
+        ├── CheckResult.cs
+        └── SpdInfo.cs
 ```
 
 ---
@@ -98,6 +111,9 @@ C:\JSH_Folder\SPD_Check_PGM\
 - **Fix 로직:** CRC는 반드시 모든 바이트 수정 마지막에 재계산 (JEDEC CRC → XMP Global CRC → XMP Profile CRC 순)
 - **Module Density Fix 불가:** 단독 바이트 없음, Die Density/IO Width/Rank 3개 바이트에서 파생되므로 Fix 대상 제외
 - **internal 접근자:** SpdFixer.cs가 SpdChecker의 내부 타입(PartFields, SpeedSpec 등) 사용 — 동일 어셈블리 내 `internal` 선언 필수
+- **Auto-Gen 템플릿명:** `TPL_{DIMM}{Density}{Bank}{IO}{Die}{Rank}_{Speed}.sp5` — Sourcing(RM/TM/CM/BM)·DRAM Type(R)·DRAM Mfr 제외 (모두 ApplyFixes로 자동 치환). 예: `TPL_DAG58A1_WM.sp5`
+- **Auto-Gen 폴더 설정:** `autogen_settings.cfg` (앱 실행 경로)에 저장·복원. `AutoGenForm` 생성자에서 `LoadSavedFolder()` 호출
+- **Editor 초기화 버튼:** `_originalData` 스냅샷(로드/저장 시 갱신)을 `_data`에 복사. `_dirty=false` 후 `SyncGridFromData()` + `RefreshDisplay()`
 
 ---
 
