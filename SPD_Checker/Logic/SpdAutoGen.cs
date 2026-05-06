@@ -17,6 +17,7 @@ namespace SPD_Checker.Logic
     public static class SpdAutoGen
     {
         public const string TEMPLATES_DIR = "Templates";
+        public const string LOG_DIR       = "Auto_Gen_Log";
         public const string LOG_FILE      = "AutoGen_Log.csv";
 
         // ── 메인 진입점 ──────────────────────────────────────────────────────
@@ -117,7 +118,9 @@ namespace SPD_Checker.Logic
                 if (string.IsNullOrEmpty(folderPath) || !Directory.Exists(folderPath))
                     return r;
 
-                string logPath = Path.Combine(folderPath, LOG_FILE);
+                string logDir  = Path.Combine(folderPath, LOG_DIR);
+                if (!Directory.Exists(logDir)) Directory.CreateDirectory(logDir);
+                string logPath = Path.Combine(logDir, LOG_FILE);
                 bool   header  = !File.Exists(logPath);
 
                 string status = r.Success
