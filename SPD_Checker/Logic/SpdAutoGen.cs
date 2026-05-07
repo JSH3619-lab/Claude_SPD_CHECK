@@ -12,6 +12,7 @@ namespace SPD_Checker.Logic
         public string TemplateUsed;      // 사용한 템플릿 파일명
         public string ErrorMessage;      // 실패 사유
         public string PartNo;            // 입력 Part Number (suffix 포함 원본)
+        public string Creator;           // 작업자 이름
     }
 
     public static class SpdAutoGen
@@ -21,9 +22,9 @@ namespace SPD_Checker.Logic
         public const string LOG_FILE      = "AutoGen_Log.csv";
 
         // ── 메인 진입점 ──────────────────────────────────────────────────────
-        public static AutoGenResult GenerateFromTemplate(string partNoInput, string folderPath)
+        public static AutoGenResult GenerateFromTemplate(string partNoInput, string folderPath, string creator = "")
         {
-            var r = new AutoGenResult { PartNo = partNoInput };
+            var r = new AutoGenResult { PartNo = partNoInput, Creator = creator?.Trim() ?? "" };
 
             // 1) 입력 검증
             if (string.IsNullOrWhiteSpace(partNoInput))
@@ -129,12 +130,13 @@ namespace SPD_Checker.Logic
 
                 var sb = new StringBuilder();
                 if (header)
-                    sb.AppendLine("DateTime,PartNo,Template,Result,ErrorMessage");
+                    sb.AppendLine("DateTime,PartNo,Template,Result,Creator,ErrorMessage");
 
                 sb.Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")).Append(',')
                   .Append(Csv(r.PartNo)).Append(',')
                   .Append(Csv(r.TemplateUsed)).Append(',')
                   .Append(status).Append(',')
+                  .Append(Csv(r.Creator)).Append(',')
                   .Append(Csv(r.ErrorMessage))
                   .AppendLine();
 

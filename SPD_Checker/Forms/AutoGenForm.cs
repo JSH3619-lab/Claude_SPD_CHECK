@@ -13,6 +13,7 @@ namespace SPD_Checker.Forms
 
         // ── UI ───────────────────────────────────────────────────────────────
         private Label    _lblFolder;
+        private TextBox  _txtCreator;
         private TextBox  _txtPartNo;
         private Panel    _pnlResult;
         private Label    _lblResultIcon;
@@ -28,27 +29,37 @@ namespace SPD_Checker.Forms
                 Path.GetDirectoryName(Application.ExecutablePath) ?? "",
                 "autogen_settings.cfg");
 
-        private static string LoadSavedFolder()
+        private static (string folder, string creator) LoadSettings()
         {
             try
             {
-                if (!File.Exists(_settingsFile)) return null;
-                string path = File.ReadAllText(_settingsFile, System.Text.Encoding.UTF8).Trim();
-                return Directory.Exists(path) ? path : null;
+                if (!File.Exists(_settingsFile)) return (null, "");
+                var lines  = File.ReadAllLines(_settingsFile, System.Text.Encoding.UTF8);
+                string folder  = lines.Length > 0 ? lines[0].Trim() : null;
+                string creator = lines.Length > 1 ? lines[1].Trim() : "";
+                if (!Directory.Exists(folder)) folder = null;
+                return (folder, creator);
             }
-            catch { return null; }
+            catch { return (null, ""); }
         }
 
-        private static void SaveFolder(string path)
+        private void SaveSettings()
         {
-            try { File.WriteAllText(_settingsFile, path, System.Text.Encoding.UTF8); }
+            try
+            {
+                File.WriteAllLines(_settingsFile,
+                    new[] { _folderPath ?? "", _txtCreator?.Text.Trim() ?? "" },
+                    System.Text.Encoding.UTF8);
+            }
             catch { }
         }
 
         public AutoGenForm()
         {
-            _folderPath = LoadSavedFolder();
+            var (folder, creator) = LoadSettings();
+            _folderPath           = folder;
             BuildUI();
+            _txtCreator.Text = creator;
             UpdateFolderUi();
         }
 
@@ -120,30 +131,55 @@ namespace SPD_Checker.Forms
 
         private Panel BuildInputArea()
         {
-            var p = new Panel { Dock = DockStyle.Top, Height = 90, BackColor = Color.FromArgb(245, 246, 248) };
-            p.Padding = new Padding(20, 14, 20, 14);
+            var p = new Panel { Dock = DockStyle.Top, Height = 138, BackColor = Color.FromArgb(245, 246, 248) };
+            p.Padding = new Padding(20, 10, 20, 10);
 
-            var lbl = new Label
+            // ── 작업자 행 ──────────────────────────────────────────────────
+            var pnlCreator = new Panel { Dock = DockStyle.Top, Height = 30, BackColor = Color.Transparent };
+            var lblCreator = new Label
+            {
+                Text      = "작업자",
+                Dock      = DockStyle.Left,
+                Width     = 56,
+                Font      = new Font("Segoe UI", 9.5F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(40, 40, 40),
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            _txtCreator = new TextBox
+            {
+                Dock        = DockStyle.Fill,
+                Font        = new Font("Segoe UI", 10F),
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor   = Color.White,
+                PlaceholderText = "이름 입력"
+            };
+            _txtCreator.Leave += (s, e) => SaveSettings();
+            pnlCreator.Controls.Add(_txtCreator);
+            pnlCreator.Controls.Add(lblCreator);
+
+            // ── Part Number 행 ────────────────────────────────────────────
+            var lblPartNo = new Label
             {
                 Text      = "Part Number / QR 스캔",
                 Dock      = DockStyle.Top,
                 Height    = 22,
+                Margin    = new Padding(0, 8, 0, 0),
                 Font      = new Font("Segoe UI", 9.5F, FontStyle.Bold),
                 ForeColor = Color.FromArgb(40, 40, 40),
                 TextAlign = ContentAlignment.MiddleLeft
             };
             _txtPartNo = new TextBox
             {
-                Dock         = DockStyle.Fill,
-                Font         = new Font("Consolas", 14F, FontStyle.Bold),
-                BorderStyle  = BorderStyle.FixedSingle,
-                BackColor    = Color.White
+                Dock        = DockStyle.Fill,
+                Font        = new Font("Consolas", 14F, FontStyle.Bold),
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor   = Color.White
             };
             _txtPartNo.KeyDown += OnPartNoKeyDown;
 
-            // Dock fill must come AFTER top label
             p.Controls.Add(_txtPartNo);
-            p.Controls.Add(lbl);
+            p.Controls.Add(lblPartNo);
+            p.Controls.Add(pnlCreator);
             return p;
         }
 
@@ -216,9 +252,10 @@ namespace SPD_Checker.Forms
             };
             _lvHistory.Columns.Add("시각",       80);
             _lvHistory.Columns.Add("결과",       80);
+            _lvHistory.Columns.Add("작업자",    100);
             _lvHistory.Columns.Add("Part No",   240);
-            _lvHistory.Columns.Add("템플릿",     220);
-            _lvHistory.Columns.Add("비고",       260);
+            _lvHistory.Columns.Add("템플릿",     200);
+            _lvHistory.Columns.Add("비고",       220);
 
             p.Controls.Add(_lvHistory);
             p.Controls.Add(lbl);
@@ -248,7 +285,7 @@ namespace SPD_Checker.Forms
                 dlg.ShowNewFolderButton = true;
                 if (dlg.ShowDialog(this) != DialogResult.OK) return;
                 _folderPath = dlg.SelectedPath;
-                SaveFolder(_folderPath);
+                SaveSettings();
                 UpdateFolderUi();
             }
         }
@@ -283,7 +320,8 @@ namespace SPD_Checker.Forms
             string partNo = _txtPartNo.Text.Trim();
             if (string.IsNullOrEmpty(partNo)) return;
 
-            var result = SpdAutoGen.GenerateFromTemplate(partNo, _folderPath);
+            string creator = _txtCreator.Text.Trim();
+            var result = SpdAutoGen.GenerateFromTemplate(partNo, _folderPath, creator);
             ShowResult(result);
             AddHistory(result);
 
@@ -339,6 +377,7 @@ namespace SPD_Checker.Forms
 
             var item = new ListViewItem(DateTime.Now.ToString("HH:mm:ss"));
             item.SubItems.Add(status);
+            item.SubItems.Add(r.Creator ?? "");
             item.SubItems.Add(r.PartNo ?? "");
             item.SubItems.Add(r.TemplateUsed ?? "");
             item.SubItems.Add(note);
