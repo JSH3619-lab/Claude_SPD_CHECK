@@ -153,7 +153,12 @@ namespace SPD_Checker.Forms
                 BackColor   = Color.White,
                 PlaceholderText = "이름 입력"
             };
-            _txtCreator.Leave += (s, e) => SaveSettings();
+            _txtCreator.Leave    += (s, e) => SaveSettings();
+            _txtCreator.TextChanged += (s, e) =>
+            {
+                if (_txtCreator.Text.Trim().Length > 0)
+                    _txtCreator.BackColor = Color.White;
+            };
             pnlCreator.Controls.Add(_txtCreator);
             pnlCreator.Controls.Add(lblCreator);
 
@@ -321,6 +326,14 @@ namespace SPD_Checker.Forms
             if (string.IsNullOrEmpty(partNo)) return;
 
             string creator = _txtCreator.Text.Trim();
+            if (string.IsNullOrEmpty(creator))
+            {
+                _txtCreator.BackColor = Color.FromArgb(255, 220, 220);
+                _txtCreator.Focus();
+                return;
+            }
+            _txtCreator.BackColor = Color.White;
+
             var result = SpdAutoGen.GenerateFromTemplate(partNo, _folderPath, creator);
             ShowResult(result);
             AddHistory(result);
