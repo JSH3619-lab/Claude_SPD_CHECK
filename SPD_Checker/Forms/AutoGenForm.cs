@@ -55,7 +55,7 @@ namespace SPD_Checker.Forms
         // ── UI Construction ──────────────────────────────────────────────────
         private void BuildUI()
         {
-            Text          = "DDR5 SPD Auto-Gen  v2.0";
+            Text          = "DDR5 SPD Auto-Gen  v1.0";
             Size          = new Size(900, 700);
             MinimumSize   = new Size(720, 560);
             StartPosition = FormStartPosition.CenterScreen;
