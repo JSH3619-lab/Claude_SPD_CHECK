@@ -28,7 +28,7 @@ namespace SPD_Checker.Forms
         private Button         _btnRevert;
         private DataGridView   _hexGrid;
         private Panel          _rightPanel;
-        private Label          _rightInfoLabel;
+        private RichTextBox    _rightInfoLabel;
         private Label          _statusLabel;
         private HudTooltipForm _hudTooltip;
 
@@ -144,14 +144,22 @@ namespace SPD_Checker.Forms
                 AutoScroll = true,
                 Padding    = new Padding(10)
             };
-            _rightInfoLabel = new Label
+            _rightInfoLabel = new RichTextBox
             {
-                AutoSize    = true,
-                MaximumSize = new Size(460, 0),
+                ReadOnly    = true,
+                BorderStyle = BorderStyle.None,
+                ScrollBars  = RichTextBoxScrollBars.None,
+                BackColor   = Color.White,
                 Margin      = new Padding(0, 4, 0, 0),
                 Font        = new Font("Consolas", 9F),
-                ForeColor   = Color.FromArgb(40, 40, 50)
+                ForeColor   = Color.FromArgb(40, 40, 50),
+                WordWrap    = false,
+                MinimumSize = new Size(460, 50),
+                TabStop     = false,
+                Cursor      = Cursors.Default,
             };
+            _rightInfoLabel.ContentsResized += (s, e) =>
+                _rightInfoLabel.Height = e.NewRectangle.Height + 4;
 
             var stack = new TableLayoutPanel
             {
@@ -679,11 +687,13 @@ namespace SPD_Checker.Forms
 
             UpdatePartInfoControls();
 
+            _rightInfoLabel.Clear();
             var sb = new StringBuilder();
             AppendTemplate(sb);
             sb.AppendLine();
-            AppendKeyBytes(sb);
-            _rightInfoLabel.Text = sb.ToString();
+            _rightInfoLabel.SelectionColor = Color.FromArgb(40, 40, 50);
+            _rightInfoLabel.AppendText(sb.ToString());
+            AppendKeyBytes(_rightInfoLabel);
 
             HighlightKeyBytes();   // 검증 결과 기반 색상 갱신
             UpdateStatusBar();
@@ -972,10 +982,16 @@ namespace SPD_Checker.Forms
             sb.AppendLine($"  {_info.TemplateFileName ?? "(파싱 실패)"}");
         }
 
-        private void AppendKeyBytes(StringBuilder sb)
+        private static readonly Color CLR_STATUS_PASS = Color.FromArgb(34, 139, 34);
+        private static readonly Color CLR_STATUS_FAIL = Color.FromArgb(200, 30,  30);
+        private static readonly Color CLR_STATUS_SKIP = Color.FromArgb(130, 130, 130);
+
+        private void AppendKeyBytes(RichTextBox rtb)
         {
-            sb.AppendLine("─── Key Bytes ─────────────────────────────────");
-            sb.AppendLine();
+            Color defaultColor = Color.FromArgb(40, 40, 50);
+            rtb.SelectionColor = defaultColor;
+            rtb.AppendText("─── Key Bytes ─────────────────────────────────\r\n\r\n");
+
             foreach (var g in KEY_BYTE_GROUPS)
             {
                 if (g.Offset + g.Length > _data.Length) continue;
@@ -984,14 +1000,28 @@ namespace SPD_Checker.Forms
                     : $"{g.Offset:X3}-{g.Offset + g.Length - 1:X3}";
                 var (raw, meaning) = g.Decode(_data, g.Offset);
 
-                string status = "  ";
+                string statusText;
+                Color  statusColor;
                 if (g.CheckItem != null && _checkResults.TryGetValue(g.CheckItem, out var r))
                 {
-                    status = r.Status == CheckStatus.Pass ? "✅"
-                           : r.Status == CheckStatus.Fail ? "❌"
-                           : "⊘ ";
+                    if (r.Status == CheckStatus.Pass)
+                        (statusText, statusColor) = ("✓", CLR_STATUS_PASS);
+                    else if (r.Status == CheckStatus.Fail)
+                        (statusText, statusColor) = ("✗", CLR_STATUS_FAIL);
+                    else
+                        (statusText, statusColor) = ("⊘", CLR_STATUS_SKIP);
                 }
-                sb.AppendLine($"  {status} {addr,-9} {raw,-11} {g.Name,-15} {meaning}");
+                else
+                {
+                    (statusText, statusColor) = (" ", defaultColor);
+                }
+
+                rtb.SelectionColor = defaultColor;
+                rtb.AppendText("  ");
+                rtb.SelectionColor = statusColor;
+                rtb.AppendText(statusText);
+                rtb.SelectionColor = defaultColor;
+                rtb.AppendText($" {addr,-9} {raw,-11} {g.Name,-15} {meaning}\r\n");
             }
         }
 

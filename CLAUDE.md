@@ -40,7 +40,9 @@
 | XMP | XMP 3.0 검증 (6000 이상 속도 코드 파트: CM/CQ/CR/CS) | ✅ 완료 |
 | Fix | FAIL 항목 자동 수정 (Save as _FIXED / Overwrite 2가지 모드) | ✅ 완료 |
 | Editor | SPD Editor / Auto-Gen 3-mode 구조 — E-0~E-7 + E-3.5 모두 완료 (LaunchForm / Hex Grid + 실시간 검증 / Auto-Fix / Save·Load / Auto-Gen / Mode 드롭다운 + FAIL 점프 / Part Info Form 입력 + 조합 검증) | ✅ 완료 (→ phase_editor_autogen.md) |
-| UI/UX | LaunchForm 버튼 줄 넘김 제거 (창 720px, Panel 기반 버튼) / AutoGen 폴더 경로 영속 저장 (autogen_settings.cfg) / Editor 초기화 버튼 (↩ 마지막 로드·저장 상태로 복원) | ✅ 완료 |
+| UI/UX | LaunchForm 버튼 줄 넘침 제거 (창 720px, Panel 기반 버튼) / AutoGen 폴더 경로 영속 저장 (autogen_settings.cfg) / Editor 초기화 버튼 (↩ 마지막 로드·저장 상태로 복원) | ✅ 완료 |
+| UI/UX | Editor Key Bytes 상태 아이콘 색상 표시 (✓ 초록 / ✗ 빨강, RichTextBox 전환) | ✅ 완료 |
+| Verify | 검증 이력 저장 — Save Verified 버튼 / SHA256 해시 기반 중복 감지 / PASS 파일만 Verified/ 복사 / verification_log.csv 기록 | ✅ 완료 |
 
 ### XMP 3.0 검증 항목 (Phase XMP 세부)
 
@@ -94,7 +96,8 @@ C:\JSH_Folder\SPD_Check_PGM\
     │   ├── SpdChecker.cs            ← 핵심 검증 로직
     │   ├── SpdFixer.cs              ← FAIL 항목 자동 수정 로직
     │   ├── SpdParser.cs             ← 공유 타입·파싱·CRC·템플릿명 조립
-    │   └── SpdAutoGen.cs            ← Auto-Gen 생성 로직
+    │   ├── SpdAutoGen.cs            ← Auto-Gen 생성 로직
+    │   └── VerificationLogger.cs    ← 검증 이력 저장 (SHA256·CSV·Verified/ 복사)
     └── Models\
         ├── CheckResult.cs
         └── SpdInfo.cs
@@ -114,6 +117,8 @@ C:\JSH_Folder\SPD_Check_PGM\
 - **Auto-Gen 템플릿명:** `TPL_{DIMM}{Density}{Bank}{IO}{Die}{Rank}_{Speed}.sp5` — Sourcing(RM/TM/CM/BM)·DRAM Type(R)·DRAM Mfr 제외 (모두 ApplyFixes로 자동 치환). 예: `TPL_DAG58A1_WM.sp5`
 - **Auto-Gen 폴더 설정:** `autogen_settings.cfg` (앱 실행 경로)에 저장·복원. `AutoGenForm` 생성자에서 `LoadSavedFolder()` 호출
 - **Editor 초기화 버튼:** `_originalData` 스냅샷(로드/저장 시 갱신)을 `_data`에 복사. `_dirty=false` 후 `SyncGridFromData()` + `RefreshDisplay()`
+- **VerificationLogger:** SHA256 해시로 파일 동일성 판단. 동일 해시 → 스킵. 동일 파일명+다른 해시 → 수정된 파일로 신규 행 추가. PASS(FAIL/SKIP 없음)만 Verified/ 복사. INCOMPLETE = SKIP 1개 이상.
+- **Verified/ 폴더:** 검증 대상 파일과 같은 디렉터리 내 자동 생성. `verification_log.csv`는 Verified/ 안에 위치.
 
 ---
 

@@ -23,6 +23,7 @@ namespace SPD_Checker
         private Button       btnClear;
         private Button       btnRun;
         private Button       btnExport;
+        private Button       _btnSaveVerified;
         private Button       _btnFilterPass;
         private Button       _btnFilterFail;
         private Button       _btnFilterSkip;
@@ -169,15 +170,21 @@ namespace SPD_Checker
             btnExport.Size    = new Size(110, 32);
             btnExport.Enabled = false;
 
+            _btnSaveVerified = MakeButton("Save Verified", Color.FromArgb(100, 60, 170), 0);
+            _btnSaveVerified.Anchor  = AnchorStyles.Top | AnchorStyles.Right;
+            _btnSaveVerified.Size    = new Size(125, 32);
+            _btnSaveVerified.Enabled = false;
+
             _btnFilterPass = MakeFilterButton("PASS", Color.FromArgb(34, 153, 60),  430);
             _btnFilterFail = MakeFilterButton("FAIL", Color.FromArgb(210, 45, 55),  514);
             _btnFilterSkip = MakeFilterButton("SKIP", Color.FromArgb(150, 150, 150), 598);
 
-            pnlCtrl.Controls.AddRange(new Control[] { btnBrowse, btnClear, lblFileCount, _btnFilterPass, _btnFilterFail, _btnFilterSkip, btnRun, btnExport });
+            pnlCtrl.Controls.AddRange(new Control[] { btnBrowse, btnClear, lblFileCount, _btnFilterPass, _btnFilterFail, _btnFilterSkip, btnRun, btnExport, _btnSaveVerified });
             pnlCtrl.Layout += (s, e) =>
             {
-                btnRun.Location    = new Point(pnlCtrl.Width - 260, 7);
-                btnExport.Location = new Point(pnlCtrl.Width - 120, 7);
+                btnRun.Location          = new Point(pnlCtrl.Width - 400, 7);
+                btnExport.Location       = new Point(pnlCtrl.Width - 260, 7);
+                _btnSaveVerified.Location = new Point(pnlCtrl.Width - 140, 7);
             };
 
             // Progress Row
@@ -296,6 +303,7 @@ namespace SPD_Checker
             btnClear.Click             += BtnClear_Click;
             btnRun.Click               += BtnRun_Click;
             btnExport.Click            += BtnExport_Click;
+            _btnSaveVerified.Click     += BtnSaveVerified_Click;
             dgvResults.CellDoubleClick += DgvResults_CellDoubleClick;
             dgvResults.CellMouseEnter  += (s, e) =>
             {
@@ -524,9 +532,10 @@ namespace SPD_Checker
             _fileResults.Clear();
             dgvResults.Rows.Clear();
             _filePass = _fileFail = _fileSkip = 0;
-            progressBar.Value = 0;
-            lblProgress.Text  = "Ready";
-            btnExport.Enabled = false;
+            progressBar.Value         = 0;
+            lblProgress.Text          = "Ready";
+            btnExport.Enabled         = false;
+            _btnSaveVerified.Enabled  = false;
             UpdateFileCount();
             UpdateSummary();
             UpdateSidePanel();
@@ -584,6 +593,37 @@ namespace SPD_Checker
                         "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
+        }
+
+        private void BtnSaveVerified_Click(object sender, EventArgs e)
+        {
+            if (_fileResults.Count == 0) return;
+
+            VerificationLogger.SaveSummary s;
+            try
+            {
+                s = VerificationLogger.Save(_files, _fileResults);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("오류: " + ex.Message, "Save Verified", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            var msg = new StringBuilder();
+            if (s.Saved > 0)           msg.AppendLine($"✓  Verified 저장: {s.Saved}개  →  Verified/ 폴더");
+            if (s.AlreadyVerified > 0) msg.AppendLine($"⊘  이미 검증됨 (스킵): {s.AlreadyVerified}개");
+            if (s.Modified > 0)        msg.AppendLine($"⚠  수정된 파일 (신규 행 추가): {s.Modified}개");
+            if (s.Fail > 0)            msg.AppendLine($"✗  FAIL (미저장): {s.Fail}개");
+            if (s.Incomplete > 0)      msg.AppendLine($"—  INCOMPLETE/SKIP (미저장): {s.Incomplete}개");
+            if (msg.Length == 0)       msg.AppendLine("처리할 파일이 없습니다.");
+
+            string firstDir = _files.Select(Path.GetDirectoryName).FirstOrDefault(d => d != null);
+            if (firstDir != null && s.Saved > 0)
+                msg.AppendLine($"\n저장 위치: {Path.Combine(firstDir, "Verified")}");
+
+            MessageBox.Show(msg.ToString().TrimEnd(), "Save Verified",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         // ── Drag & Drop ──────────────────────────────────────────────────────
@@ -668,10 +708,11 @@ namespace SPD_Checker
 
         private void SetRunning(bool running)
         {
-            btnRun.Enabled    = !running;
-            btnBrowse.Enabled = !running;
-            btnClear.Enabled  = !running;
-            btnExport.Enabled = !running && _results.Count > 0;
+            btnRun.Enabled           = !running;
+            btnBrowse.Enabled        = !running;
+            btnClear.Enabled         = !running;
+            btnExport.Enabled        = !running && _results.Count > 0;
+            _btnSaveVerified.Enabled = !running && _fileResults.Count > 0;
         }
 
         [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
