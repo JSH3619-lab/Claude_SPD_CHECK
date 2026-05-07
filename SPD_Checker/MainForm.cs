@@ -89,7 +89,7 @@ namespace SPD_Checker
         // ── UI Construction ──────────────────────────────────────────────────
         private void BuildUI()
         {
-            Text          = "DDR5 SPD Checker  v1.0";
+            Text          = "DDR5 SPD Studio  v1.0";
             Size          = new Size(1140, 730);
             MinimumSize   = new Size(900, 600);
             StartPosition = FormStartPosition.CenterScreen;
@@ -98,7 +98,7 @@ namespace SPD_Checker
 
             // Header
             var pnlHeader = MakePanel(DockStyle.Top, 50, Color.FromArgb(28, 57, 95));
-            var lblTitle  = MakeLabel("DDR5 SPD Checker", new Font("Segoe UI", 14F, FontStyle.Bold),
+            var lblTitle  = MakeLabel("DDR5 SPD Studio", new Font("Segoe UI", 14F, FontStyle.Bold),
                                       Color.White, DockStyle.Fill, ContentAlignment.MiddleLeft);
             lblTitle.Padding = new Padding(15, 0, 0, 0);
             var lblVer = MakeLabel("v1.0  |  Ph.1 ~ 4",
@@ -564,7 +564,7 @@ namespace SPD_Checker
                 try
                 {
                     var sb = new StringBuilder();
-                    sb.AppendLine("DDR5 SPD Checker — Export Log");
+                    sb.AppendLine("DDR5 SPD Studio — Export Log");
                     sb.AppendLine("Generated : " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
                     sb.AppendLine(string.Format("Total: {0}  |  PASS: {1}  |  FAIL: {2}",
                         _results.Count, _results.Count(r => r.Pass), _results.Count(r => !r.Pass)));

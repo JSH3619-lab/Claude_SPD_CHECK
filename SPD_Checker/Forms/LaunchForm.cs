@@ -23,7 +23,7 @@ namespace SPD_Checker.Forms
         // ── UI Construction ──────────────────────────────────────────────────
         private void BuildUI()
         {
-            Text            = "DDR5 SPD Tool — 모드 선택";
+            Text            = "DDR5 SPD Studio — 모드 선택";
             ClientSize      = new Size(720, 320);
             StartPosition   = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -41,7 +41,7 @@ namespace SPD_Checker.Forms
             };
             header.Controls.Add(new Label
             {
-                Text      = "DDR5 SPD Tool  v1.0",
+                Text      = "DDR5 SPD Studio  v1.0",
                 Font      = new Font("Segoe UI", 16F, FontStyle.Bold),
                 ForeColor = Color.White,
                 Dock      = DockStyle.Fill,

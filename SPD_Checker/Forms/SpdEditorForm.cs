@@ -120,7 +120,7 @@ namespace SPD_Checker.Forms
         // ── UI Construction ──────────────────────────────────────────────────
         private void BuildUI()
         {
-            Text          = "DDR5 SPD Editor  v1.0";
+            Text          = "DDR5 SPD Studio — Editor  v1.0";
             Size          = new Size(1240, 760);
             MinimumSize   = new Size(1000, 600);
             StartPosition = FormStartPosition.CenterScreen;
@@ -335,7 +335,7 @@ namespace SPD_Checker.Forms
             var header = new Panel { Dock = DockStyle.Top, Height = 50, BackColor = Color.FromArgb(28, 57, 95) };
             var lblTitle = new Label
             {
-                Text      = "DDR5 SPD Editor",
+                Text      = "DDR5 SPD Studio — Editor",
                 Font      = new Font("Segoe UI", 14F, FontStyle.Bold),
                 ForeColor = Color.White,
                 Dock      = DockStyle.Fill,
@@ -1279,7 +1279,7 @@ namespace SPD_Checker.Forms
 
         private void UpdateTitle()
         {
-            Text = $"DDR5 SPD Editor  v1.0   —   {GetDisplayName()}{(_dirty ? "  *" : "")}";
+            Text = $"DDR5 SPD Studio — Editor  v1.0   —   {GetDisplayName()}{(_dirty ? "  *" : "")}";
         }
 
         private string GetDisplayName() =>
