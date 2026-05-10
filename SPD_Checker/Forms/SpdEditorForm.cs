@@ -513,6 +513,7 @@ namespace SPD_Checker.Forms
             _dirty        = false;
             SyncGridFromData();
             RefreshDisplay();
+            AppLogger.Info("SpdEditor", "New 파일 생성 (빈 SPD)");
         }
 
         private void LoadFileDialog()
@@ -540,6 +541,8 @@ namespace SPD_Checker.Forms
                 SyncGridFromData();
                 RefreshDisplay();
 
+                AppLogger.Info("SpdEditor", $"파일 로드: {Path.GetFileName(path)} ({raw.Length} bytes)");
+
                 if (raw.Length != SPD_SIZE)
                     MessageBox.Show(this,
                         $"파일 크기가 {raw.Length} bytes입니다. {SPD_SIZE} bytes로 정규화 (부족분 0x00 패딩 / 초과분 잘라냄).",
@@ -547,6 +550,7 @@ namespace SPD_Checker.Forms
             }
             catch (Exception ex)
             {
+                AppLogger.Error("SpdEditor", $"파일 로드 실패: {path}", ex);
                 MessageBox.Show(this, $"파일 로드 실패:\n{ex.Message}",
                     "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
@@ -558,7 +562,9 @@ namespace SPD_Checker.Forms
             var r = MessageBox.Show(this,
                 "수정된 내용이 저장되지 않았습니다. 무시하고 계속하시겠습니까?",
                 "확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-            return r == DialogResult.Yes;
+            bool ok = r == DialogResult.Yes;
+            if (!ok) AppLogger.Info("SpdEditor", "파일 변경 사용자 취소 (dirty 유지)");
+            return ok;
         }
 
         private void OnFormClosing(object sender, FormClosingEventArgs e)
@@ -1030,6 +1036,7 @@ namespace SPD_Checker.Forms
         {
             if (!_dirty)
             {
+                AppLogger.Warn("SpdEditor", "초기화 시도 — 변경 없음");
                 MessageBox.Show(this, "변경된 내용이 없습니다.",
                     "초기화", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
@@ -1038,12 +1045,17 @@ namespace SPD_Checker.Forms
             var r = MessageBox.Show(this,
                 "마지막으로 로드/저장한 상태로 되돌립니다.\n수정 내용이 모두 사라집니다. 계속하시겠습니까?",
                 "초기화 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-            if (r != DialogResult.Yes) return;
+            if (r != DialogResult.Yes)
+            {
+                AppLogger.Info("SpdEditor", "초기화 사용자 취소");
+                return;
+            }
 
             Array.Copy(_originalData, _data, SPD_SIZE);
             _dirty = false;
             SyncGridFromData();
             RefreshDisplay();
+            AppLogger.Info("SpdEditor", "초기 상태로 복원");
         }
 
         // ── Auto-Fix ─────────────────────────────────────────────────────────
@@ -1052,6 +1064,7 @@ namespace SPD_Checker.Forms
             string partNo = SpdParser.StripSuffix((_info?.PartNumberAscii ?? "").Trim());
             if (string.IsNullOrEmpty(partNo))
             {
+                AppLogger.Warn("SpdEditor", "Auto-Fix 시도 — PartNo 미입력");
                 MessageBox.Show(this,
                     "Part Number가 없습니다.\nByte 521~550 (0x209~0x226)에 Part Number를 먼저 입력하세요.",
                     "Auto-Fix", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -1072,6 +1085,7 @@ namespace SPD_Checker.Forms
 
                 if (changed == 0)
                 {
+                    AppLogger.Info("SpdEditor", $"Auto-Fix — 변경사항 없음 (이미 정상, PartNo={partNo})");
                     MessageBox.Show(this, "수정할 항목이 없습니다. 모든 바이트가 이미 정상입니다.",
                         "Auto-Fix", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
@@ -1082,12 +1096,14 @@ namespace SPD_Checker.Forms
                 SyncGridFromData();
                 RefreshDisplay();
 
+                AppLogger.Info("SpdEditor", $"Auto-Fix 적용 — {changed}개 바이트 수정 (PartNo={partNo})");
                 MessageBox.Show(this,
                     $"Auto-Fix 완료: {changed}개 바이트 수정됨.\n저장은 [💾 Save] 버튼으로 확정하세요.",
                     "Auto-Fix", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
+                AppLogger.Error("SpdEditor", $"Auto-Fix 실패 (PartNo={partNo})", ex);
                 MessageBox.Show(this, $"Auto-Fix 실패:\n{ex.Message}",
                     "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
@@ -1169,6 +1185,7 @@ namespace SPD_Checker.Forms
             SyncGridFromData();
             RefreshDisplay();
 
+            AppLogger.Info("SpdEditor", $"CRC 재계산 (변경={(changed ? "있음" : "없음")})");
             MessageBox.Show(this, report.ToString(), "CRC 일괄 재계산",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
@@ -1348,9 +1365,11 @@ namespace SPD_Checker.Forms
                 _dirty        = false;
                 UpdateStatusBar();
                 UpdateTitle();
+                AppLogger.Info("SpdEditor", $"저장: {Path.GetFileName(path)}");
             }
             catch (Exception ex)
             {
+                AppLogger.Error("SpdEditor", $"저장 실패: {path}", ex);
                 MessageBox.Show(this, $"저장 실패:\n{ex.Message}",
                     "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }

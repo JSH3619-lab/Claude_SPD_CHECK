@@ -106,6 +106,7 @@ namespace SPD_Checker.Logic
             }
             catch (Exception ex)
             {
+                AppLogger.Error("SpdAutoGen", $"GenerateFromTemplate 예외 — PartNo={partNoInput}", ex);
                 r.ErrorMessage = "생성 중 오류: " + ex.Message;
                 return Log(r, folderPath);
             }

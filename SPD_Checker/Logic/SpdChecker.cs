@@ -60,6 +60,7 @@ namespace SPD_Checker.Logic
             }
             catch (Exception ex)
             {
+                AppLogger.Error("SpdChecker", $"파일 파싱 실패: {fileName}", ex);
                 results.Add(new CheckResult
                 {
                     FileName  = fileName,

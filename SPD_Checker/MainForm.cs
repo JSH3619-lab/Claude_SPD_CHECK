@@ -421,8 +421,21 @@ namespace SPD_Checker
             for (int i = 0; i < files.Count; i++)
             {
                 if (_worker.CancellationPending) { e.Cancel = true; return; }
-                string file    = files[i];
-                var    results = SpdChecker.CheckFile(file);
+                string file = files[i];
+                List<CheckResult> results;
+                try
+                {
+                    results = SpdChecker.CheckFile(file);
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.Error("MainForm", $"파일 검증 예외: {Path.GetFileName(file)}", ex);
+                    results = new List<CheckResult> {
+                        new CheckResult { FileName = Path.GetFileName(file),
+                            CheckItem = "ERROR", Pass = false, Status = CheckStatus.Fail,
+                            Note = "예외: " + ex.Message }
+                    };
+                }
                 _worker.ReportProgress(0, new ProgressInfo
                 {
                     FileIndex  = i + 1,
@@ -495,14 +508,21 @@ namespace SPD_Checker
         {
             SetRunning(false);
             if (e.Cancelled)
+            {
                 lblProgress.Text = "Cancelled.";
+                AppLogger.Warn("MainForm", "Run 취소됨");
+            }
             else if (e.Error != null)
+            {
                 lblProgress.Text = "Error: " + e.Error.Message;
+                AppLogger.Error("MainForm", "Run 도중 예외", e.Error);
+            }
             else
             {
                 lblProgress.Text = string.Format(
                     "Complete.  Files: {0}   PASS: {1}   FAIL: {2}   SKIP: {3}",
                     _filePass + _fileFail + _fileSkip, _filePass, _fileFail, _fileSkip);
+                AppLogger.Info("MainForm", $"검증 완료 — 총 {_filePass + _fileFail + _fileSkip}개  PASS={_filePass}  FAIL={_fileFail}  SKIP={_fileSkip}");
                 progressBar.Value    = progressBar.Maximum;
                 progressBar.ForeColor = _fileFail > 0
                     ? Color.FromArgb(210, 45, 55)
@@ -545,6 +565,7 @@ namespace SPD_Checker
         {
             if (_files.Count == 0)
             {
+                AppLogger.Warn("MainForm", "Run 시도 — 파일 미선택");
                 MessageBox.Show("Please select .sp5 files first.",
                     "No Files Selected", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
@@ -558,6 +579,8 @@ namespace SPD_Checker
             progressBar.ForeColor = Color.FromArgb(34, 153, 60);
             UpdateSidePanel();
             SetRunning(true);
+            string firstDir = _files.Select(Path.GetDirectoryName).FirstOrDefault(d => d != null) ?? "(다중)";
+            AppLogger.Info("MainForm", $"검증 시작 — {_files.Count}개 파일  폴더={firstDir}");
             _worker.RunWorkerAsync(_files.ToList());
         }
 
@@ -584,11 +607,13 @@ namespace SPD_Checker
                             r.FileName, r.CheckItem, r.Expected, r.Actual, r.Result, r.Note));
 
                     File.WriteAllText(dlg.FileName, sb.ToString(), Encoding.UTF8);
+                    AppLogger.Info("MainForm", $"Export Log 완료: {dlg.FileName} ({_results.Count}행)");
                     MessageBox.Show("Log exported:\n" + dlg.FileName,
                         "Export Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 catch (Exception ex)
                 {
+                    AppLogger.Error("MainForm", $"Export Log 실패: {dlg.FileName}", ex);
                     MessageBox.Show("Export failed: " + ex.Message,
                         "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
@@ -603,9 +628,11 @@ namespace SPD_Checker
             try
             {
                 s = VerificationLogger.Save(_files, _fileResults);
+                AppLogger.Info("MainForm", $"Save Verified 완료 — Saved={s.Saved} AlreadyVerified={s.AlreadyVerified} Modified={s.Modified} Fail={s.Fail} Incomplete={s.Incomplete}");
             }
             catch (Exception ex)
             {
+                AppLogger.Error("MainForm", "Save Verified 실패", ex);
                 MessageBox.Show("오류: " + ex.Message, "Save Verified", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }

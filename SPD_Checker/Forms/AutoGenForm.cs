@@ -328,13 +328,32 @@ namespace SPD_Checker.Forms
             string creator = _txtCreator.Text.Trim();
             if (string.IsNullOrEmpty(creator))
             {
+                AppLogger.Warn("AutoGen", $"Auto-Gen 시도 — 작업자 미입력 (PartNo={partNo})");
                 _txtCreator.BackColor = Color.FromArgb(255, 220, 220);
                 _txtCreator.Focus();
                 return;
             }
             _txtCreator.BackColor = Color.White;
 
-            var result = SpdAutoGen.GenerateFromTemplate(partNo, _folderPath, creator);
+            AppLogger.Info("AutoGen", $"Auto-Gen 시작 — PartNo={partNo}, Worker={creator}");
+            AutoGenResult result;
+            try
+            {
+                result = SpdAutoGen.GenerateFromTemplate(partNo, _folderPath, creator);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Error("AutoGen", $"Auto-Gen 예외 — PartNo={partNo}", ex);
+                throw;
+            }
+
+            if (result.Success && result.AlreadyExists)
+                AppLogger.Info("AutoGen", $"Auto-Gen 스킵 (기존 파일 존재) — {result.PartNo}.sp5");
+            else if (result.Success)
+                AppLogger.Info("AutoGen", $"Auto-Gen 성공 — {Path.GetFileName(result.OutputPath)} (template={result.TemplateUsed})");
+            else
+                AppLogger.Warn("AutoGen", $"Auto-Gen 실패 — PartNo={result.PartNo}, 사유={result.ErrorMessage}");
+
             ShowResult(result);
             AddHistory(result);
 
