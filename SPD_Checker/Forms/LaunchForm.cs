@@ -1,9 +1,6 @@
 using System;
-using System.Diagnostics;
 using System.Drawing;
-using System.IO;
 using System.Windows.Forms;
-using SPD_Checker.Logic;
 
 namespace SPD_Checker.Forms
 {
@@ -70,46 +67,6 @@ namespace SPD_Checker.Forms
                 Color.FromArgb(65, 125, 190), new Point(255, 110), () => SelectMode(AppMode.Editor)));
             Controls.Add(MakeModePanel("🤖", "Auto-Gen",   "QR 스캔 자동 생성 (작업자)",
                 Color.FromArgb(170, 70, 20),  new Point(485, 110), () => SelectMode(AppMode.AutoGen)));
-
-            // 로그 열기 버튼 (우측 하단)
-            var btnLog = new Button
-            {
-                Text      = "📂 로그 열기",
-                Font      = new Font("Segoe UI", 8.5F),
-                Size      = new Size(100, 24),
-                Location  = new Point(610, 290),
-                FlatStyle = FlatStyle.Flat,
-                BackColor = Color.FromArgb(230, 232, 235),
-                ForeColor = Color.FromArgb(60, 60, 60),
-                Cursor    = Cursors.Hand
-            };
-            btnLog.FlatAppearance.BorderColor = Color.FromArgb(190, 192, 195);
-            btnLog.Click += (s, e) => OpenLogFolder();
-            Controls.Add(btnLog);
-        }
-
-        private void OpenLogFolder()
-        {
-            try
-            {
-                string target = AppLogger.GetLatestLogPath() ?? AppLogger.LogDirectory;
-                if (string.IsNullOrEmpty(target))
-                {
-                    MessageBox.Show("로그가 아직 초기화되지 않았습니다.", "로그 열기",
-                        MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    return;
-                }
-                if (File.Exists(target))
-                    Process.Start("explorer.exe", $"/select,\"{target}\"");
-                else
-                    Process.Start("explorer.exe", $"\"{target}\"");
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Error("LaunchForm", "로그 폴더 열기 실패", ex);
-                MessageBox.Show("로그 폴더를 열 수 없습니다:\n" + ex.Message,
-                    "로그 열기", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            }
         }
 
         private Panel MakeModePanel(string icon, string title, string subtitle, Color bg, Point loc, Action onClick)
