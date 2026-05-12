@@ -11,8 +11,8 @@
 
 1. 새 기능·변경은 **계획 텍스트 제시 → 승인 → 코드 작성** 순서.
 2. 기존 파일 수정 시 변경 범위 먼저 명시.
-3. **양쪽 경로 모두 수정 필수:** 워크트리(`.claude/worktrees/...`)에만 수정하면 `C:\JSH_Folder\SPD_Check_PGM`에 반영 안 됨. 항상 main 경로 직접 수정 또는 머지.
-4. **빌드 명령:** `dotnet build C:\JSH_Folder\SPD_Check_PGM\SPD_Checker\SPD_Checker.csproj -c Debug`
+3. **양쪽 경로 모두 수정 필수:** 워크트리(`.claude/worktrees/...`)에만 수정하면 `C:\JSH_Folder\PGM\SPD_Check_PGM`에 반영 안 됨. 항상 main 경로 직접 수정 또는 머지.
+4. **빌드 명령:** `dotnet build C:\JSH_Folder\PGM\SPD_Check_PGM\SPD_Checker\SPD_Checker.csproj -c Debug`
 
 ---
 
@@ -43,6 +43,7 @@
 | UI/UX | LaunchForm 버튼 줄 넘침 제거 (창 720px, Panel 기반 버튼) / AutoGen 폴더 경로 영속 저장 (autogen_settings.cfg) / Editor 초기화 버튼 (↩ 마지막 로드·저장 상태로 복원) | ✅ 완료 |
 | UI/UX | Editor Key Bytes 상태 아이콘 색상 표시 (✓ 초록 / ✗ 빨강, RichTextBox 전환) | ✅ 완료 |
 | Verify | 검증 이력 저장 — Save Verified 버튼 / SHA256 해시 기반 중복 감지 / PASS 파일만 Verified/ 복사 / verification_log.csv 기록 | ✅ 완료 |
+| Logging | 시스템 로그 — `%LOCALAPPDATA%\SPD_Studio\logs\app_YYYYMMDD.log` / INFO·WARN·ERROR·FATAL 4단계 / 7일 자동 삭제 / 전역 예외 핸들러 | ✅ 완료 |
 
 ### XMP 3.0 검증 항목 (Phase XMP 세부)
 
@@ -70,7 +71,7 @@
 ## 5. 폴더 구조
 
 ```
-C:\JSH_Folder\SPD_Check_PGM\
+C:\JSH_Folder\PGM\SPD_Check_PGM\
 ├── CLAUDE.md
 ├── JESD400-5C_DDR5.pdf
 ├── JEDEC ID_2025 (1).pdf
@@ -97,7 +98,8 @@ C:\JSH_Folder\SPD_Check_PGM\
     │   ├── SpdFixer.cs              ← FAIL 항목 자동 수정 로직
     │   ├── SpdParser.cs             ← 공유 타입·파싱·CRC·템플릿명 조립
     │   ├── SpdAutoGen.cs            ← Auto-Gen 생성 로직
-    │   └── VerificationLogger.cs    ← 검증 이력 저장 (SHA256·CSV·Verified/ 복사)
+    │   ├── VerificationLogger.cs    ← 검증 이력 저장 (SHA256·CSV·Verified/ 복사)
+    │   └── AppLogger.cs             ← 시스템 로그 (%LOCALAPPDATA%\SPD_Studio\logs\)
     └── Models\
         ├── CheckResult.cs
         └── SpdInfo.cs
@@ -119,6 +121,8 @@ C:\JSH_Folder\SPD_Check_PGM\
 - **Editor 초기화 버튼:** `_originalData` 스냅샷(로드/저장 시 갱신)을 `_data`에 복사. `_dirty=false` 후 `SyncGridFromData()` + `RefreshDisplay()`
 - **VerificationLogger:** SHA256 해시로 파일 동일성 판단. 동일 해시 → 스킵. 동일 파일명+다른 해시 → 수정된 파일로 신규 행 추가. PASS(FAIL/SKIP 없음)만 Verified/ 복사. INCOMPLETE = SKIP 1개 이상.
 - **Verified/ 폴더:** 검증 대상 파일과 같은 디렉터리 내 자동 생성. `verification_log.csv`는 Verified/ 안에 위치.
+- **AppLogger 로그 위치:** `%LOCALAPPDATA%\SPD_Studio\logs\app_YYYYMMDD.log` (사용자 본인 폴더라 권한 이슈 없음). 7일 경과 자동 삭제. `Program.Main` 시작 시 `AppLogger.Init()` 호출 + 전역 예외 핸들러 2개(`Application.ThreadException` / `AppDomain.UnhandledException`) 등록 → 모든 미처리 예외 FATAL 기록 후 다이얼로그에 로그 위치 안내.
+- **로그 기록 정책:** 정상 클릭(Browse/Clear/Filter 등)은 로그 안 함. 결과 행위(Run/Save/Load/AutoFix/CRC/AutoGen)는 INFO. 사용자 실수(파일 미선택 Run / 작업자 미입력 AutoGen 등)는 WARN. 시스템 예외는 ERROR + stack trace. Hex 셀 편집 오타는 빈도 너무 높아 스킵.
 
 ---
 
