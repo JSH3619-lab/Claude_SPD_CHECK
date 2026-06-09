@@ -226,6 +226,165 @@ namespace SPD_Checker.Logic
                    $"{f.BankCode}{f.CompositionCode}{f.DieDensityCode}{f.RankCode}_{speed}.sp5";
         }
 
+        // ── PID → SID 변환 (SPD Byte 521~550 기입값) ────────────────────────
+        // 파일명은 PID. SPD 내부 Part No 자리에는 SID가 들어가야 함.
+        //   HEAD: Sourcing TM→RM / BM→CM, 나머지 유지
+        //   TAIL(첫 '-' ~ 둘째 '-' 이전) 위치 파싱:
+        //     [0]IC [1]CompType [2]CompTest(제거) [3]SMT [4]Test [5][6]Speed
+        //     [7]PCB→색상(DDR5='B'/DDR4='G') [8]Vendor(제거)
+        //     [9]Purchaser({V,H,A}만 유지) / 이후(특수코드·0Y) 전부 제거
+        //   형식 미달 시 null 반환 (호출부에서 PID로 fallback)
+        // 예: TMRDAG58A1A-NYWRRQK7GH0Y → RMRDAG58A1A-NYRRQKBH
+        public static string BuildSid(string pid)
+        {
+            if (string.IsNullOrEmpty(pid)) return null;
+
+            int d1 = pid.IndexOf('-');
+            if (d1 < 3) return null;                 // Sourcing(2) + DRAM Type(1) 최소
+            string head = pid.Substring(0, d1);
+            string rest = pid.Substring(d1 + 1);
+
+            int d2 = rest.IndexOf('-');
+            string tail = d2 >= 0 ? rest.Substring(0, d2) : rest;
+            if (tail.Length < 8) return null;        // IC~PCB 최소 8자
+
+            // HEAD: Sourcing 치환
+            string src = head.Substring(0, 2).ToUpperInvariant();
+            if (src == "TM")      src = "RM";
+            else if (src == "BM") src = "CM";
+            string headOut = src + head.Substring(2);
+
+            // 색상: DRAM Type (HEAD[2]) — DDR5(R)='B'(검정), DDR4(4)='G'(초록)
+            char color = char.ToUpperInvariant(head[2]) == '4' ? 'G' : 'B';
+
+            var sb = new StringBuilder(12);
+            sb.Append(tail[0]);                      // IC Brand
+            sb.Append(tail[1]);                      // Comp Type
+            // tail[2] Comp Test → 제거
+            sb.Append(tail[3]);                      // Module SMT
+            sb.Append(tail[4]);                      // Module Test
+            sb.Append(tail[5]);                      // Speed[0]
+            sb.Append(tail[6]);                      // Speed[1]
+            sb.Append(color);                        // tail[7] PCB → 색상
+            // tail[8] Vendor → 제거
+            if (tail.Length >= 10)                   // tail[9] Purchaser
+            {
+                char p = char.ToUpperInvariant(tail[9]);
+                if (p == 'V' || p == 'H' || p == 'A') sb.Append(p);
+            }
+
+            return headOut + "-" + sb.ToString();
+        }
+
+        // ── Part 체계 자리별 허용값 (RAMOS DRAM PRODUCT PART 표 기준) ────────
+        private const string ALLOW_DRAMTYPE = "4R";
+        private const string ALLOW_DIMM     = "SDGC";
+        private const string ALLOW_BANK     = "4567";
+        private const string ALLOW_COMP     = "486";
+        private const string ALLOW_DIE      = "48AHB";
+        private const string ALLOW_RANK     = "012";
+        private const string ALLOW_IC       = "SGHMCN";
+        private const string ALLOW_COMPTYPE = "PUNHMCDGTFEQWJAXYZ";
+        private const string ALLOW_COMPTEST = "RSAWG1245";
+        private const string ALLOW_SMT      = "0RETGYDL1245";
+        private const string ALLOW_TEST     = "0RTGYDL1245S";
+        private const string ALLOW_PCB      = "0123456789ABGK";
+        private const string ALLOW_VENDOR   = "SGBA";
+        private const string ALLOW_PURCH    = "0VHA";
+        private static readonly HashSet<string> DENSITY_SET =
+            new HashSet<string>(StringComparer.Ordinal) { "1G", "2G", "4G", "8G", "AG", "BG", "CG" };
+        // CompGen(#9)은 표가 'M,A,B,C,D,E,F,G…'로 열려 있어 A~Z 영문자 전체 허용
+
+        // ── Part 체계 검증 (AutoGen 생성 차단용) ─────────────────────────────
+        // null 반환 = 적합. 문자열 반환 = 차단 사유.
+        // 검사: 본체/후미 자리별 허용값 + Speed 코드 + Purchaser 규칙(자사=없음/외주=필수)
+        public static string ValidatePartSystem(string pid)
+        {
+            if (string.IsNullOrWhiteSpace(pid))
+                return "Part Number가 비어 있음";
+
+            string clean = StripSuffix(pid.Trim());
+            var f = ParsePartFields(clean);
+            if (!f.Valid)
+                return $"Part 본체 구조 오류: {f.Error}";
+            if (f.SpeedCode == null)
+                return "Speed 코드를 찾을 수 없음 — 체계 불일치";
+
+            // HEAD 자리별 허용값
+            if (f.Sourcing != "RM" && f.Sourcing != "TM" && f.Sourcing != "CM" && f.Sourcing != "BM")
+                return $"Sourcing '{f.Sourcing}' 무효 (RM/TM/CM/BM)";
+            if (ALLOW_DRAMTYPE.IndexOf(f.DramTypeCode) < 0) return $"DRAM Type '{f.DramTypeCode}' 무효 (4/R)";
+            if (ALLOW_DIMM.IndexOf(f.DimmType) < 0)         return $"DIMM Type '{f.DimmType}' 무효 (S/D/G/C)";
+            if (!DENSITY_SET.Contains(f.DensityCode))       return $"Density '{f.DensityCode}' 무효";
+            if (ALLOW_BANK.IndexOf(f.BankCode) < 0)         return $"Bank/VDD '{f.BankCode}' 무효 (4/5/6/7)";
+            if (ALLOW_COMP.IndexOf(f.CompositionCode) < 0)  return $"Composition '{f.CompositionCode}' 무효 (4/8/6)";
+            if (ALLOW_DIE.IndexOf(f.DieDensityCode) < 0)    return $"Die Density '{f.DieDensityCode}' 무효 (4/8/A/H/B)";
+            if (ALLOW_RANK.IndexOf(f.RankCode) < 0)         return $"Rank '{f.RankCode}' 무효 (0/1/2)";
+
+            // CompGen(#9): Sourcing(2)+core(8) 다음 자리 — A~Z 영문자만
+            string headBody = clean.Substring(0, clean.IndexOf('-'));
+            if (headBody.Length >= 11)
+            {
+                char cg = char.ToUpperInvariant(headBody[10]);
+                if (cg < 'A' || cg > 'Z')
+                    return $"Component Gen '{headBody[10]}' 무효 (A~Z)";
+            }
+
+            // TAIL 추출 (첫 '-' ~ 둘째 '-' 이전)
+            int d1 = clean.IndexOf('-');
+            string rest = clean.Substring(d1 + 1);
+            int d2 = rest.IndexOf('-');
+            string tail = d2 >= 0 ? rest.Substring(0, d2) : rest;
+            if (tail.Length < 8)
+                return "후미(IC~PCB) 구조 부족 — 체계 불일치";
+
+            // TAIL 자리별 허용값 (t[5..6]=Speed는 위 SpeedCode로 검증)
+            if (ALLOW_IC.IndexOf(char.ToUpperInvariant(tail[0])) < 0)       return $"IC Brand '{tail[0]}' 무효 (S/G/H/M/C/N)";
+            if (ALLOW_COMPTYPE.IndexOf(char.ToUpperInvariant(tail[1])) < 0) return $"Comp Type '{tail[1]}' 무효";
+            if (ALLOW_COMPTEST.IndexOf(char.ToUpperInvariant(tail[2])) < 0) return $"Comp Test '{tail[2]}' 무효";
+            if (ALLOW_SMT.IndexOf(char.ToUpperInvariant(tail[3])) < 0)      return $"Module SMT '{tail[3]}' 무효";
+            if (ALLOW_TEST.IndexOf(char.ToUpperInvariant(tail[4])) < 0)     return $"Module Test '{tail[4]}' 무효";
+            if (ALLOW_PCB.IndexOf(char.ToUpperInvariant(tail[7])) < 0)      return $"PCB '{tail[7]}' 무효";
+            if (tail.Length >= 9 && ALLOW_VENDOR.IndexOf(char.ToUpperInvariant(tail[8])) < 0)
+                return $"Vendor '{tail[8]}' 무효 (S/G/B/A)";
+            if (tail.Length >= 10 && ALLOW_PURCH.IndexOf(char.ToUpperInvariant(tail[9])) < 0)
+                return $"Purchaser '{tail[9]}' 무효 (0/V/H/A)";
+
+            // Purchaser 규칙: 자사(RM/CM)=없어야 / 외주(TM/BM)=필수
+            bool third    = f.Sourcing == "TM" || f.Sourcing == "BM";
+            bool hasPurch = HasPurchaser(clean);   // {V,H,A}
+            if (third  && !hasPurch) return "외주(TM/BM) Part는 Purchaser(V/H/A) 자리가 필요합니다";
+            if (!third &&  hasPurch) return "자사(RM/CM) Part는 Purchaser가 없어야 합니다";
+
+            if (BuildSid(clean) == null)
+                return "SID 변환 불가 — 체계 불일치";
+            return null;
+        }
+
+        // 후미 t[9] Purchaser 존재 여부 ({V,H,A})
+        private static bool HasPurchaser(string pid)
+        {
+            int d1 = pid.IndexOf('-');
+            if (d1 < 0) return false;
+            string rest = pid.Substring(d1 + 1);
+            int d2 = rest.IndexOf('-');
+            string tail = d2 >= 0 ? rest.Substring(0, d2) : rest;
+            if (tail.Length < 10) return false;
+            char p = char.ToUpperInvariant(tail[9]);
+            return p == 'V' || p == 'H' || p == 'A';
+        }
+
+        // ── 파일명 Grade Code 디폴트 부착 (-TN) ─────────────────────────────
+        // 2번째 '-'(Grade Code 자리)가 이미 있으면 그대로, 없으면 "-TN" 추가
+        public static string EnsureGradeSuffix(string partNo)
+        {
+            string p = partNo.Trim();
+            int d1 = p.IndexOf('-');
+            if (d1 < 0) return p;                          // 비정상 — 그대로
+            bool hasGrade = p.IndexOf('-', d1 + 1) >= 0;   // 2번째 '-' = Grade 존재
+            return hasGrade ? p : p + "-TN";
+        }
+
         // ── CRC-16 (poly=0x1021, init=0x0000) ───────────────────────────────
         // JEDEC SPD / XMP 공통
         public static ushort ComputeCrc16(byte[] data, int offset, int length)

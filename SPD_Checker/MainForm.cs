@@ -23,6 +23,7 @@ namespace SPD_Checker
         private Button       btnClear;
         private Button       btnRun;
         private Button       btnExport;
+        private Button       _btnFixAll;
         private Button       _btnSaveVerified;
         private Button       _btnFilterPass;
         private Button       _btnFilterFail;
@@ -90,7 +91,7 @@ namespace SPD_Checker
         // ── UI Construction ──────────────────────────────────────────────────
         private void BuildUI()
         {
-            Text          = "DDR5 SPD Studio  v1.0";
+            Text          = "DDR5 SPD Studio  v2.0";
             Size          = new Size(1140, 730);
             MinimumSize   = new Size(900, 600);
             StartPosition = FormStartPosition.CenterScreen;
@@ -102,7 +103,7 @@ namespace SPD_Checker
             var lblTitle  = MakeLabel("DDR5 SPD Studio", new Font("Segoe UI", 14F, FontStyle.Bold),
                                       Color.White, DockStyle.Fill, ContentAlignment.MiddleLeft);
             lblTitle.Padding = new Padding(15, 0, 0, 0);
-            var lblVer = MakeLabel("v1.0  |  Ph.1 ~ 4",
+            var lblVer = MakeLabel("v2.0  |  Ph.1~4 / XMP / SID",
                                    new Font("Segoe UI", 8F), Color.FromArgb(170, 195, 220),
                                    DockStyle.Right, ContentAlignment.MiddleCenter);
             lblVer.Width = 140;
@@ -208,8 +209,23 @@ namespace SPD_Checker
                 ForeColor = Color.FromArgb(50, 50, 50),
                 Padding   = new Padding(8, 0, 0, 0)
             };
+            _btnFixAll = new Button
+            {
+                Text      = "🔧  FAIL 일괄수정",
+                Dock      = DockStyle.Right,
+                Width     = 150,
+                BackColor = Color.FromArgb(205, 110, 20),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Font      = new Font("Segoe UI", 9F, FontStyle.Bold),
+                Enabled   = false,
+                Cursor    = Cursors.Hand
+            };
+            _btnFixAll.FlatAppearance.BorderSize = 0;
+
             pnlProg.Controls.Add(lblProgress);
             pnlProg.Controls.Add(progressBar);
+            pnlProg.Controls.Add(_btnFixAll);   // 마지막 추가 → 우측 우선 도킹
 
             // Side Panel
             var pnlSide = BuildSidePanel();
@@ -303,6 +319,7 @@ namespace SPD_Checker
             btnClear.Click             += BtnClear_Click;
             btnRun.Click               += BtnRun_Click;
             btnExport.Click            += BtnExport_Click;
+            _btnFixAll.Click           += BtnFixAll_Click;
             _btnSaveVerified.Click     += BtnSaveVerified_Click;
             dgvResults.CellDoubleClick += DgvResults_CellDoubleClick;
             dgvResults.CellMouseEnter  += (s, e) =>
@@ -555,6 +572,7 @@ namespace SPD_Checker
             progressBar.Value         = 0;
             lblProgress.Text          = "Ready";
             btnExport.Enabled         = false;
+            _btnFixAll.Enabled        = false;
             _btnSaveVerified.Enabled  = false;
             UpdateFileCount();
             UpdateSummary();
@@ -618,6 +636,69 @@ namespace SPD_Checker
                         "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
+        }
+
+        // ── FAIL 일괄수정 (Part No SID + 기타 항목 자동 수정) ─────────────────
+        private void BtnFixAll_Click(object sender, EventArgs e)
+        {
+            // FAIL이 1개라도 있는 파일 수집 (full path)
+            var failFiles = _files.Where(p =>
+                _fileResults.TryGetValue(Path.GetFileName(p), out var rs) &&
+                rs.Any(r => r.Status == CheckStatus.Fail)).ToList();
+
+            if (failFiles.Count == 0)
+            {
+                MessageBox.Show("수정할 FAIL 파일이 없습니다.", "일괄수정",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var confirm = MessageBox.Show(
+                $"FAIL 파일 {failFiles.Count}개의 항목을 올바른 값으로 수정하시겠습니까?",
+                "일괄수정 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (confirm != DialogResult.Yes) return;
+
+            // 저장 방식: [예] 원본 덮어쓰기 / [아니오] _FIXED 사본 / [취소] 중단
+            var saveMode = MessageBox.Show(
+                "저장 방식을 선택하세요.\n\n[예]    원본 덮어쓰기\n[아니오]  _FIXED 사본 생성\n[취소]   중단",
+                "저장 방식", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+            if (saveMode == DialogResult.Cancel) return;
+            bool overwrite = saveMode == DialogResult.Yes;
+
+            int ok = 0, err = 0;
+            var newPaths = new List<string>();
+            foreach (string path in failFiles)
+            {
+                try
+                {
+                    byte[] data      = SpdParser.ParseFile(path);
+                    byte[] fixedData = SpdFixer.ApplyFixes(data, path);
+                    if (overwrite) SpdFixer.SaveOverwrite(path, fixedData);
+                    else           newPaths.Add(SpdFixer.SaveAsFixed(path, fixedData));
+                    ok++;
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.Error("MainForm", $"일괄수정 실패: {Path.GetFileName(path)}", ex);
+                    err++;
+                }
+            }
+
+            AppLogger.Info("MainForm",
+                $"FAIL 일괄수정 — 대상 {failFiles.Count}  성공 {ok}  실패 {err}  모드={(overwrite ? "덮어쓰기" : "_FIXED 사본")}");
+
+            // 사본 모드: 생성된 _FIXED 파일을 목록에 추가
+            foreach (string np in newPaths)
+                if (!_files.Contains(np)) _files.Add(np);
+            UpdateFileCount();
+
+            MessageBox.Show(
+                $"일괄수정 완료\n\n성공: {ok}개   실패: {err}개" +
+                (overwrite ? "" : $"\n_FIXED 사본 {newPaths.Count}개를 목록에 추가했습니다.") +
+                "\n\n재검증을 실행합니다.",
+                "일괄수정", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+            BtnRun_Click(sender, e);   // 재검증
         }
 
         private void BtnSaveVerified_Click(object sender, EventArgs e)
@@ -739,6 +820,7 @@ namespace SPD_Checker
             btnBrowse.Enabled        = !running;
             btnClear.Enabled         = !running;
             btnExport.Enabled        = !running && _results.Count > 0;
+            _btnFixAll.Enabled       = !running && _fileFail > 0;
             _btnSaveVerified.Enabled = !running && _fileResults.Count > 0;
         }
 

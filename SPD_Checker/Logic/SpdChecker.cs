@@ -237,19 +237,20 @@ namespace SPD_Checker.Logic
             Array.Copy(data, PART_NUMBER_OFFSET, pnBytes, 0, PART_NUMBER_LENGTH);
 
             string actualTrim = Encoding.ASCII.GetString(pnBytes).TrimEnd('\x20', '\x00');
-            string actualNorm = SpdParser.StripSuffix(actualTrim);
-            bool   pass       = string.Equals(expectedPartNumber, actualNorm, StringComparison.Ordinal);
+            // 파일명은 PID, SPD 내부 Part No 자리에는 SID가 들어가야 함 → SID로 비교
+            string expectedSid = SpdParser.BuildSid(expectedPartNumber) ?? expectedPartNumber;
+            bool   pass       = string.Equals(expectedSid, actualTrim, StringComparison.Ordinal);
             string hexDump    = BitConverter.ToString(pnBytes).Replace("-", " ");
 
             return new CheckResult
             {
                 FileName  = fileName,
                 CheckItem = "Part Number",
-                Expected  = expectedPartNumber,
+                Expected  = expectedSid,
                 Actual    = actualTrim,
                 Pass      = pass,
                 Status    = pass ? CheckStatus.Pass : CheckStatus.Fail,
-                Note      = $"Byte 521~550 | {hexDump}"
+                Note      = $"PID:{expectedPartNumber} → SID | Byte 521~550 | {hexDump}"
             };
         }
 

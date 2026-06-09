@@ -41,7 +41,7 @@ namespace SPD_Checker.Forms
             };
             header.Controls.Add(new Label
             {
-                Text      = "DDR5 SPD Studio  v1.0",
+                Text      = "DDR5 SPD Studio  v2.0",
                 Font      = new Font("Segoe UI", 16F, FontStyle.Bold),
                 ForeColor = Color.White,
                 Dock      = DockStyle.Fill,

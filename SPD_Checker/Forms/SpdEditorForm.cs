@@ -30,6 +30,7 @@ namespace SPD_Checker.Forms
         private Panel          _rightPanel;
         private RichTextBox    _rightInfoLabel;
         private Label          _statusLabel;
+        private Label          _pidSidLabel;
         private HudTooltipForm _hudTooltip;
 
         // Part Info 입력 컨트롤 (E-3.5 단계 1: PartNo TextBox만 활성)
@@ -120,7 +121,7 @@ namespace SPD_Checker.Forms
         // ── UI Construction ──────────────────────────────────────────────────
         private void BuildUI()
         {
-            Text          = "DDR5 SPD Studio — Editor  v1.0";
+            Text          = "DDR5 SPD Studio — Editor  v2.0";
             Size          = new Size(1240, 760);
             MinimumSize   = new Size(1000, 600);
             StartPosition = FormStartPosition.CenterScreen;
@@ -299,8 +300,22 @@ namespace SPD_Checker.Forms
                 Margin    = new Padding(0)
             };
 
+            // PID(파일명) / SID(SPD 내부) 동시 표시 — 작업자는 PID로 파일을 찾음
+            _pidSidLabel = new Label
+            {
+                Dock      = DockStyle.Top,
+                AutoSize  = true,
+                Font      = new Font("Consolas", 9.5F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(28, 57, 95),
+                Padding   = new Padding(2, 2, 2, 6),
+                Margin    = new Padding(0),
+                Text      = "PID(파일명): —\r\nSID(SPD)  : —"
+            };
+
+            // 위→아래: header → PID/SID → grid (Dock=Top 은 나중 추가가 위쪽)
             panel.Controls.Add(grid);
-            panel.Controls.Add(header);   // Dock=Top 추가 순서: header 나중에 추가 → 위쪽에 배치
+            panel.Controls.Add(_pidSidLabel);
+            panel.Controls.Add(header);
             return panel;
         }
 
@@ -673,10 +688,11 @@ namespace SPD_Checker.Forms
                 if (!_checkResults.ContainsKey(r.CheckItem))
                     _checkResults[r.CheckItem] = r;
 
-            // 파일 로드 시: 파일명 vs bytes 521~550 Part Number 대조 (AppendKeyBytes 전에)
+            // 파일 로드 시: 파일명(PID)→SID vs bytes 521~550 대조 (AppendKeyBytes 전에)
             if (_filePath != null)
             {
-                string expectedPn = SpdParser.StripSuffix(Path.GetFileNameWithoutExtension(_filePath));
+                string pidName    = SpdParser.StripSuffix(Path.GetFileNameWithoutExtension(_filePath));
+                string expectedPn = SpdParser.BuildSid(pidName) ?? pidName;
                 string actualPn   = Encoding.ASCII.GetString(_data,
                     SpdParser.PART_NUMBER_OFFSET, SpdParser.PART_NUMBER_LENGTH).TrimEnd(' ', '\0');
                 bool pnPass = string.Equals(expectedPn, actualPn, StringComparison.OrdinalIgnoreCase);
@@ -702,8 +718,20 @@ namespace SPD_Checker.Forms
             AppendKeyBytes(_rightInfoLabel);
 
             HighlightKeyBytes();   // 검증 결과 기반 색상 갱신
+            UpdatePidSidLabel();
             UpdateStatusBar();
             UpdateTitle();
+        }
+
+        // ── PID(파일명) / SID(Byte 521~550) 라벨 갱신 ────────────────────────
+        private void UpdatePidSidLabel()
+        {
+            if (_pidSidLabel == null) return;
+            string pid = _filePath != null
+                ? Path.GetFileNameWithoutExtension(_filePath)
+                : "(새 파일)";
+            string sid = GetPartNumberFromBytes();
+            _pidSidLabel.Text = $"PID(파일명): {pid}\r\nSID(SPD)  : {sid}";
         }
 
         // ── Part Info 컨트롤 갱신 (bytes → UI) ─────────────────────────────
@@ -1195,8 +1223,7 @@ namespace SPD_Checker.Forms
         {
             string ascii = Encoding.ASCII.GetString(d, o, SpdParser.PART_NUMBER_LENGTH)
                                          .TrimEnd(' ', '\0');
-            string raw = ascii.Length > 10 ? ascii.Substring(0, 9) + "…" : ascii;
-            return (raw, "bytes 209~226");
+            return (ascii, "bytes 209~226");   // SID 풀 표시
         }
 
         private static (string Raw, string Meaning) DecDramType(byte[] d, int o)
@@ -1326,7 +1353,7 @@ namespace SPD_Checker.Forms
 
         private void UpdateTitle()
         {
-            Text = $"DDR5 SPD Studio — Editor  v1.0   —   {GetDisplayName()}{(_dirty ? "  *" : "")}";
+            Text = $"DDR5 SPD Studio — Editor  v2.0   —   {GetDisplayName()}{(_dirty ? "  *" : "")}";
         }
 
         private string GetDisplayName() =>

@@ -40,7 +40,18 @@ namespace SPD_Checker.Logic
             }
 
             string partNo  = partNoInput.Trim();
-            string outPath = Path.Combine(folderPath, partNo + ".sp5");
+
+            // 1.5) Part 체계 구조 검증 — 위반 시 생성 차단
+            string vErr = SpdParser.ValidatePartSystem(partNo);
+            if (vErr != null)
+            {
+                r.ErrorMessage = vErr;
+                return Log(r, folderPath);
+            }
+
+            // 출력 파일명 = PID + "-TN" (Grade Code 디폴트, 이미 있으면 유지)
+            string fileName = SpdParser.EnsureGradeSuffix(partNo);
+            string outPath  = Path.Combine(folderPath, fileName + ".sp5");
 
             // 2) 이미 존재하면 정상 처리 (생성 스킵)
             if (File.Exists(outPath))
@@ -94,9 +105,8 @@ namespace SPD_Checker.Logic
                     tplData = padded;
                 }
 
-                // SpdFixer는 filePath의 파일명에서 Part Number를 파싱
-                string virtualPath = Path.Combine(folderPath, partNo + ".sp5");
-                byte[] fixedData   = SpdFixer.ApplyFixes(tplData, virtualPath);
+                // SpdFixer는 filePath의 파일명에서 Part Number를 파싱 (outPath = -TN 포함)
+                byte[] fixedData = SpdFixer.ApplyFixes(tplData, outPath);
 
                 File.WriteAllText(outPath, SpdFixer.SerializeToSp5(fixedData), Encoding.ASCII);
 

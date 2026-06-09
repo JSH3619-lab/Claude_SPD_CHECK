@@ -197,8 +197,10 @@ namespace SPD_Checker.Logic
         // ── P2: 파일명 파생 ───────────────────────────────────────────────────
         private static void FixPartNumber(byte[] data, string partNo)
         {
+            // 파일명은 PID, SPD 내부 Part No 자리에는 SID 기입
+            string sid = SpdParser.BuildSid(partNo) ?? partNo;
             for (int i = 0; i < PART_NUMBER_LENGTH; i++) data[PART_NUMBER_OFFSET + i] = 0x20;
-            byte[] ascii = Encoding.ASCII.GetBytes(partNo);
+            byte[] ascii = Encoding.ASCII.GetBytes(sid);
             Array.Copy(ascii, 0, data, PART_NUMBER_OFFSET, Math.Min(ascii.Length, PART_NUMBER_LENGTH));
         }
 
