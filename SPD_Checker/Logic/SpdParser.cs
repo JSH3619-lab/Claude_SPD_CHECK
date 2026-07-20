@@ -82,6 +82,21 @@ namespace SPD_Checker.Logic
         internal static readonly HashSet<string> XMP_SPEED_CODES =
             new HashSet<string>(StringComparer.Ordinal) { "CM", "CQ", "CR", "CS" };
 
+        // ── Phase 1: 규칙 뷰어용 타이밍 스냅샷 (읽기전용) ──────────────────────
+        // 각 컬럼: { 속도, 코드, CL-tRCD-tRP, tCK }.  6000↑(CM/CQ/CR/CS)는 XMP 프로파일 기준
+        internal static List<string[]> GetTimingRules()
+        {
+            var order = new[] { "QK", "WM", "CM", "CP", "CQ", "CR", "CS" };
+            var rows = new List<string[]>();
+            foreach (string code in order)
+            {
+                if (!SPEED_MAP.TryGetValue(code, out var s)) continue;
+                string tag = XMP_SPEED_CODES.Contains(code) ? "  (XMP)" : "";
+                rows.Add(new[] { s.Name + tag, code, $"{s.CL}-{s.TrcdNck}-{s.TrpNck}", $"{s.TckPs}ps" });
+            }
+            return rows;
+        }
+
         // ── Byte → 의미 단위 변환 (Density 계산 등 표시·검증 공유) ───────────
         internal static readonly Dictionary<byte, int> DIE_DENSITY_GB_MAP =
             new Dictionary<byte, int>

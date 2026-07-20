@@ -32,6 +32,10 @@ namespace SPD_Checker.Forms
             menu.Items.Add(BuildItem("✅  Check",     AppMode.Check,   currentMode, onSelect, beforeSwitch));
             menu.Items.Add(BuildItem("✏  Editor",    AppMode.Editor,  currentMode, onSelect, beforeSwitch));
             menu.Items.Add(BuildItem("🤖  Auto-Gen", AppMode.AutoGen, currentMode, onSelect, beforeSwitch));
+            menu.Items.Add(new ToolStripSeparator());
+            var rulesItem = new ToolStripMenuItem("⚙  규칙 설정") { Font = new Font("Segoe UI", 9.5F) };
+            rulesItem.Click += (s, e) => { using (var f = new RulesForm()) f.ShowDialog(btn.FindForm()); };
+            menu.Items.Add(rulesItem);
 
             btn.Click += (s, e) => menu.Show(btn, new Point(0, btn.Height));
             return btn;

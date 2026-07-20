@@ -47,6 +47,21 @@ namespace SPD_Checker.Forms
                 Dock      = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleCenter
             });
+            var btnRules = new Button
+            {
+                Text      = "⚙ 규칙",
+                Size      = new Size(88, 30),
+                Location  = new Point(615, 15),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(45, 78, 120),
+                ForeColor = Color.White,
+                Font      = new Font("Segoe UI", 9F),
+                Cursor    = Cursors.Hand
+            };
+            btnRules.FlatAppearance.BorderSize = 0;
+            btnRules.Click += (s, e) => { using (var f = new RulesForm()) f.ShowDialog(this); };
+            header.Controls.Add(btnRules);
+            btnRules.BringToFront();   // Dock=Fill 헤더 라벨 위로 올림 (안 하면 가려짐)
             Controls.Add(header);
 
             // Subtitle

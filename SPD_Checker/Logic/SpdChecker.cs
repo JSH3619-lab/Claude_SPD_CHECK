@@ -288,6 +288,26 @@ namespace SPD_Checker.Logic
                 { 'M', new (byte, byte, string)[] { (0x80, 0x2C, "Micron"), (0x02, 0xB5, "Spectek") } },
             };
 
+        // ── Phase 1: 규칙 뷰어용 스냅샷 (읽기전용) ─────────────────────────────
+        // 각 컬럼: { 항목, Byte, 값, 근거 }
+        internal static List<string[]> GetIdentityRules()
+        {
+            var rows = new List<string[]>
+            {
+                new[] { "DRAM Type", "2", $"{(byte)0x12:X2}", "JESD400-5C · DDR5" },
+                new[] { "SPD Hub", "194~197", string.Join(" ", SPD_HUB_EXPECTED.Select(b => b.ToString("X2"))), "ANPEC API2201-B24" },
+                new[] { "PMIC", "198~201", string.Join(" ", PMIC0_EXPECTED.Select(b => b.ToString("X2"))), "ANPEC APW8502CEQBI-TRG" },
+                new[] { "Module Mfr", "512~513", $"{MODULE_MFR_B1:X2} {MODULE_MFR_B2:X2}", "JEP-106 · RAmos" },
+            };
+            foreach (var kv in DRAM_MFR_MAP)
+            {
+                string vals = string.Join(" / ", kv.Value.Select(c => $"{c.B1:X2} {c.B2:X2} ({c.Name})"));
+                rows.Add(new[] { $"DRAM Mfr [{kv.Key}]", "552~553", vals, "JEP-106" });
+            }
+            rows.Add(new[] { "DRAM Stepping", "554", "CompGen 유도 (삼성 B=95 · 하이닉스 M=FF · 그외 ASCII)", "JESD400-5C §20.8 + 벤더" });
+            return rows;
+        }
+
         private static CheckResult CheckModuleMfr(string fileName, byte[] data)
         {
             byte actual1 = data[MODULE_MFR_OFFSET];
