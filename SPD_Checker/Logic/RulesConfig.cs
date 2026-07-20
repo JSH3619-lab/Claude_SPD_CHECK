@@ -24,31 +24,38 @@ namespace SPD_Checker.Logic
         public static void Init()
         {
             if (_loaded) return;
-            Dto dto = null;
+
+            bool fileExists = File.Exists(ConfigPath);
+            Dto  dto        = null;
+            if (fileExists)
+            {
+                try { dto = JsonSerializer.Deserialize<Dto>(File.ReadAllText(ConfigPath)); }
+                catch (Exception ex) { Warn("rules.json 파싱 실패 — 기본값으로 동작: " + ex.Message); }
+            }
+
+            // 값 적용 — 잘못된 hex/구조여도 크래시 없이 기본값 폴백
             try
             {
-                if (File.Exists(ConfigPath))
-                {
-                    dto = JsonSerializer.Deserialize<Dto>(File.ReadAllText(ConfigPath));
-                    if (dto?.identity == null) dto = null;
-                }
+                if (dto?.identity != null) Apply(dto);
+                else { Apply(DefaultDto()); if (fileExists) Warn("rules.json 내용 무효 — 기본값으로 동작"); }
             }
             catch (Exception ex)
             {
-                try { AppLogger.Warn("RulesConfig", "rules.json 로드 실패 — 기본값 사용: " + ex.Message); } catch { }
-                dto = null;
+                Warn("rules.json 값 오류(hex 등) — 기본값으로 동작: " + ex.Message);
+                Apply(DefaultDto());
             }
 
-            if (dto == null)
+            // 파일이 아예 없을 때만 기본값으로 생성 (손상된 편집본은 보존 → 사용자가 수정)
+            if (!fileExists)
             {
-                dto = DefaultDto();
-                try { File.WriteAllText(ConfigPath, JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true })); }
-                catch (Exception ex) { try { AppLogger.Warn("RulesConfig", "rules.json 생성 실패: " + ex.Message); } catch { } }
+                try { File.WriteAllText(ConfigPath, JsonSerializer.Serialize(DefaultDto(), new JsonSerializerOptions { WriteIndented = true })); }
+                catch (Exception ex) { Warn("rules.json 생성 실패: " + ex.Message); }
             }
 
-            Apply(dto);
             _loaded = true;
         }
+
+        private static void Warn(string msg) { try { AppLogger.Warn("RulesConfig", msg); } catch { } }
 
         private static void Apply(Dto dto)
         {

@@ -50,6 +50,8 @@
 | Logging | 시스템 로그 — `%LOCALAPPDATA%\SPD_Studio\logs\app_YYYYMMDD.log` / INFO·WARN·ERROR·FATAL 4단계 / 7일 자동 삭제 / 전역 예외 핸들러 | ✅ 완료 |
 | Stepping | DRAM Stepping(Byte 554) 자동 유도 — `SpdParser.BuildDramStepping` (CompGen=Die Gen 글자 → ASCII, 삼성B=95·하이닉스M=FF 벤더 예외). Check 검증 + Fix/Auto-Gen 기입 + Editor 표시. CRC 범위 밖이라 재계산 불필요 (→ jesd400_bytes.md) | ✅ 완료 |
 | Hub/PMIC | SPD Hub(194~197)·PMIC(198~201) 고정값 검증 — ANPEC API2201-B24=`0B10 8000` / APW8502=`0B10 8244`. 과거 삼성 stale값(86 32/80 B3) → Check FAIL, Fix 자동 교정(CRC 범위 안이라 재계산). 전 파트 공통 고정 상수, 완전 일치 판정. Editor 표시 (→ jesd400_bytes.md) | ✅ 완료 |
+| Rules | 규칙 설정 — 식별값(Module/DRAM Mfr, SPD Hub, PMIC) `rules.json` 외부화 + 읽기전용 뷰어(시작화면 `⚙ 규칙`, 전 모드 `Mode▾`). 편집은 rules.json 직접(재실행 반영). 인앱 편집기는 미구현(YAGNI). 향후: 인앱 편집/파트별 예외/타이밍 외부화 | ✅ 완료(P1 뷰어·P2 외부화) |
+| Perf | Check Run 병렬화 — 파일 검사 16개 동시(네트워크 지연 겹침). 네트워크 드라이브 154개 3776→2337ms. `[PERF]` 로그(검사·읽기/그리드 분리). 결과·순서 불변 | ✅ 완료 |
 
 ### XMP 3.0 검증 항목 (Phase XMP 세부)
 
@@ -129,6 +131,8 @@ C:\JSH_Folder\PGM\SPD_Check_PGM\
 - **verification_log.csv:** 검증 대상 파일과 **같은 소스 폴더에 직접** 생성(Verified/ 폴더 없음). 컬럼: FileName, SHA256, CheckDate(날짜+시각), OverallResult, Pass/Fail/SkipCount. 엑셀에서 바로 열림.
 - **AppLogger 로그 위치:** `%LOCALAPPDATA%\SPD_Studio\logs\app_YYYYMMDD.log` (사용자 본인 폴더라 권한 이슈 없음). 7일 경과 자동 삭제. `Program.Main` 시작 시 `AppLogger.Init()` 호출 + 전역 예외 핸들러 2개(`Application.ThreadException` / `AppDomain.UnhandledException`) 등록 → 모든 미처리 예외 FATAL 기록 후 다이얼로그에 로그 위치 안내.
 - **로그 기록 정책:** 정상 클릭(Browse/Clear/Filter 등)은 로그 안 함. 결과 행위(Run/Save/Load/AutoFix/CRC/AutoGen)는 INFO. 사용자 실수(파일 미선택 Run / 작업자 미입력 AutoGen 등)는 WARN. 시스템 예외는 ERROR + stack trace. Hex 셀 편집 오타는 빈도 너무 높아 스킵.
+- **rules.json (식별 규칙 외부 설정):** exe 경로에 위치. 값 변경 시 **파일 직접 편집**(hex 문자열, 예: `"spdHub": "0B 10 80 00"`) 후 **재실행** → `⚙ 규칙` 뷰어로 확인. 파일 없으면 기본값(현재 하드코딩 값)으로 자동 생성. **파싱/hex 오류 시 크래시 없이 기본값으로 동작 + WARN 로그**(`RulesConfig.Init` 폴백; 손상된 편집본은 덮어쓰지 않고 보존). SpdChecker/SpdFixer가 상수 대신 이 값 참조.
+- **Check Run 병렬:** `Worker_DoWork`가 `Parallel.For`(최대 16)로 파일 검사. `CheckFile`은 정적·무상태(RulesConfig 읽기전용)라 스레드 안전. 결과는 완료 후 파일 순서대로 그리드 일괄 반영(SuspendLayout). 성능 저하 체감 시 `[PERF]` 로그로 검사 vs 그리드 시간 확인.
 
 ---
 
