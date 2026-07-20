@@ -121,7 +121,7 @@ namespace SPD_Checker.Forms
         // ── UI Construction ──────────────────────────────────────────────────
         private void BuildUI()
         {
-            Text          = "DDR5 SPD Studio — Editor  v2.0";
+            Text          = "DDR5 SPD Studio — Editor  v2.1";
             Size          = new Size(1240, 760);
             MinimumSize   = new Size(1000, 600);
             StartPosition = FormStartPosition.CenterScreen;
@@ -1353,7 +1353,7 @@ namespace SPD_Checker.Forms
 
         private void UpdateTitle()
         {
-            Text = $"DDR5 SPD Studio — Editor  v2.0   —   {GetDisplayName()}{(_dirty ? "  *" : "")}";
+            Text = $"DDR5 SPD Studio — Editor  v2.1   —   {GetDisplayName()}{(_dirty ? "  *" : "")}";
         }
 
         private string GetDisplayName() =>

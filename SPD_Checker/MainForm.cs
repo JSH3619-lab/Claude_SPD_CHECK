@@ -92,7 +92,7 @@ namespace SPD_Checker
         // ── UI Construction ──────────────────────────────────────────────────
         private void BuildUI()
         {
-            Text          = "DDR5 SPD Studio  v2.0";
+            Text          = "DDR5 SPD Studio  v2.1";
             Size          = new Size(1140, 730);
             MinimumSize   = new Size(900, 600);
             StartPosition = FormStartPosition.CenterScreen;
@@ -104,7 +104,7 @@ namespace SPD_Checker
             var lblTitle  = MakeLabel("DDR5 SPD Studio", new Font("Segoe UI", 14F, FontStyle.Bold),
                                       Color.White, DockStyle.Fill, ContentAlignment.MiddleLeft);
             lblTitle.Padding = new Padding(15, 0, 0, 0);
-            var lblVer = MakeLabel("v2.0  |  Ph.1~4 / XMP / SID",
+            var lblVer = MakeLabel("v2.1  |  Ph.1~4 / XMP / SID",
                                    new Font("Segoe UI", 8F), Color.FromArgb(170, 195, 220),
                                    DockStyle.Right, ContentAlignment.MiddleCenter);
             lblVer.Width = 140;

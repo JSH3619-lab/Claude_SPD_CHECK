@@ -6,7 +6,7 @@
     <AssemblyName>SPD_Studio</AssemblyName>
     <RootNamespace>SPD_Checker</RootNamespace>
     <AssemblyTitle>DDR5 SPD Studio</AssemblyTitle>
-    <AssemblyVersion>2.0.0.0</AssemblyVersion>
+    <AssemblyVersion>2.1.0.0</AssemblyVersion>
     <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
 </Project>

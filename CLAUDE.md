@@ -42,6 +42,7 @@
 | SID | PID→SID 변환 (`SpdParser.BuildSid`) — 파일명=PID, Byte 521~550=SID. Check 대조·Fix 기입 모두 SID 기준. Check 모드 `🔧 FAIL 일괄수정` 버튼(다량 파일 ApplyFixes 일괄, 덮어쓰기/_FIXED 선택). Editor도 SID 기준 대조 + Part Info 상단 PID/SID 2줄 라벨 + Key Bytes 풀 SID 표시 | ✅ 완료 (→ part_number_parsing.md) |
 | AutoGen | 체계 검증 (`SpdParser.ValidatePartSystem`) — 자리별 허용값 화이트리스트 + Purchaser 규칙(자사=금지/외주=필수) 위반 시 생성 차단. 파일명 `-TN` 디폴트 부착(`EnsureGradeSuffix`) | ✅ 완료 (→ part_number_parsing.md) |
 | Ver | v2.0 (AssemblyVersion 2.0.0.0 + UI 전 화면) — SID 검증 도입으로 기존 PASS→FAIL 호환성 변경(major bump) | ✅ 완료 |
+| Ver | v2.1 (AssemblyVersion 2.1.0.0 + UI 전 화면) — DRAM Mfr G/S→Samsung(80/CE) 매핑 변경 + Check 모드 선택 수정(체크박스) 기능 | ✅ 완료 |
 | Editor | SPD Editor / Auto-Gen 3-mode 구조 — E-0~E-7 + E-3.5 모두 완료 (LaunchForm / Hex Grid + 실시간 검증 / Auto-Fix / Save·Load / Auto-Gen / Mode 드롭다운 + FAIL 점프 / Part Info Form 입력 + 조합 검증) | ✅ 완료 (→ phase_editor_autogen.md) |
 | UI/UX | LaunchForm 버튼 줄 넘침 제거 (창 720px, Panel 기반 버튼) / AutoGen 폴더 경로 영속 저장 (autogen_settings.cfg) / Editor 초기화 버튼 (↩ 마지막 로드·저장 상태로 복원) | ✅ 완료 |
 | UI/UX | Editor Key Bytes 상태 아이콘 색상 표시 (✓ 초록 / ✗ 빨강, RichTextBox 전환) | ✅ 완료 |
