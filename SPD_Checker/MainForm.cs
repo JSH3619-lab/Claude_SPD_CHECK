@@ -53,6 +53,7 @@ namespace SPD_Checker
         private bool _showPass = true;
         private bool _showFail = true;
         private bool _showSkip = true;
+        private bool _selectAllChecked = true;
 
         // ── Check Items (side panel static list) ──────────────────────────────
         private static readonly (string Phase, string Item)[] CHECK_ITEMS_LIST =
@@ -211,7 +212,7 @@ namespace SPD_Checker
             };
             _btnFixAll = new Button
             {
-                Text      = "🔧  FAIL 일괄수정",
+                Text      = "🔧  선택 수정",
                 Dock      = DockStyle.Right,
                 Width     = 150,
                 BackColor = Color.FromArgb(205, 110, 20),
@@ -239,7 +240,7 @@ namespace SPD_Checker
                 RowHeadersVisible         = false,
                 AllowUserToAddRows        = false,
                 AllowUserToDeleteRows     = false,
-                ReadOnly                  = true,
+                ReadOnly                  = false,
                 SelectionMode             = DataGridViewSelectionMode.FullRowSelect,
                 AutoSizeColumnsMode       = DataGridViewAutoSizeColumnsMode.None,
                 ColumnHeadersHeight       = 32,
@@ -287,7 +288,22 @@ namespace SPD_Checker
                 SortMode     = DataGridViewColumnSortMode.Automatic
             };
 
-            dgvResults.Columns.AddRange(colFile, colResult, colFailed);
+            // Select checkbox: leftmost, only FAIL rows checkable
+            var colSelect = new DataGridViewCheckBoxColumn
+            {
+                Name         = "colSelect",
+                HeaderText   = "",
+                Width        = 40,
+                MinimumWidth = 40,
+                Resizable    = DataGridViewTriState.False,
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
+                SortMode     = DataGridViewColumnSortMode.NotSortable
+            };
+            colSelect.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+
+            dgvResults.Columns.AddRange(colSelect, colFile, colResult, colFailed);
+            colFile.ReadOnly = colResult.ReadOnly = colFailed.ReadOnly = true;
+            colSelect.ReadOnly = false;
 
             // Content area: grid (Fill) + side panel (Right)
             // pnlSide must be added AFTER dgvResults so it has higher index → docked first
@@ -321,6 +337,13 @@ namespace SPD_Checker
             btnExport.Click            += BtnExport_Click;
             _btnFixAll.Click           += BtnFixAll_Click;
             _btnSaveVerified.Click     += BtnSaveVerified_Click;
+            dgvResults.CurrentCellDirtyStateChanged += (s, e) =>
+            {
+                if (dgvResults.IsCurrentCellDirty)
+                    dgvResults.CommitEdit(DataGridViewDataErrorContexts.Commit);
+            };
+            dgvResults.CellPainting           += DgvResults_CellPainting;
+            dgvResults.ColumnHeaderMouseClick += DgvResults_HeaderCheckClick;
             dgvResults.CellDoubleClick += DgvResults_CellDoubleClick;
             dgvResults.CellMouseEnter  += (s, e) =>
             {
@@ -502,9 +525,16 @@ namespace SPD_Checker
             }
 
             string overallResult = isSkip ? "SKIP" : (allPass ? "PASS" : "FAIL");
-            int rowIdx = dgvResults.Rows.Add(info.FileName, overallResult, failedStr);
+            bool isFail = overallResult == "FAIL";
+            int rowIdx = dgvResults.Rows.Add(isFail, info.FileName, overallResult, failedStr);
 
             var row = dgvResults.Rows[rowIdx];
+            if (!isFail)                       // PASS/SKIP: 체크 불가
+            {
+                var selCell = row.Cells["colSelect"];
+                selCell.ReadOnly = true;
+                selCell.Value    = false;
+            }
             if (allPass)
                 row.DefaultCellStyle.BackColor = Color.FromArgb(240, 255, 240);
             else if (isSkip)
@@ -592,6 +622,7 @@ namespace SPD_Checker
             _failStats.Clear();
             _fileResults.Clear();
             dgvResults.Rows.Clear();
+            _selectAllChecked = true;
             _filePass = _fileFail = _fileSkip = 0;
             progressBar.Value     = 0;
             progressBar.ForeColor = Color.FromArgb(34, 153, 60);
@@ -641,21 +672,26 @@ namespace SPD_Checker
         // ── FAIL 일괄수정 (Part No SID + 기타 항목 자동 수정) ─────────────────
         private void BtnFixAll_Click(object sender, EventArgs e)
         {
-            // FAIL이 1개라도 있는 파일 수집 (full path)
-            var failFiles = _files.Where(p =>
-                _fileResults.TryGetValue(Path.GetFileName(p), out var rs) &&
-                rs.Any(r => r.Status == CheckStatus.Fail)).ToList();
+            // 체크된 FAIL 행의 파일명 수집 → full path 매핑
+            var selectedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (DataGridViewRow row in dgvResults.Rows)
+            {
+                if (row.Cells["colResult"].Value?.ToString() != "FAIL") continue;
+                if (Convert.ToBoolean(row.Cells["colSelect"].Value ?? false))
+                    selectedNames.Add(row.Cells["colFile"].Value?.ToString());
+            }
+            var failFiles = _files.Where(p => selectedNames.Contains(Path.GetFileName(p))).ToList();
 
             if (failFiles.Count == 0)
             {
-                MessageBox.Show("수정할 FAIL 파일이 없습니다.", "일괄수정",
+                MessageBox.Show("선택된 FAIL 파일이 없습니다.\n\n수정할 파일을 체크한 뒤 다시 시도하세요.", "선택 수정",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
             var confirm = MessageBox.Show(
-                $"FAIL 파일 {failFiles.Count}개의 항목을 올바른 값으로 수정하시겠습니까?",
-                "일괄수정 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                $"선택한 FAIL 파일 {failFiles.Count}개의 항목을 올바른 값으로 수정하시겠습니까?",
+                "선택 수정 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (confirm != DialogResult.Yes) return;
 
             // 저장 방식: [예] 원본 덮어쓰기 / [아니오] _FIXED 사본 / [취소] 중단
@@ -696,7 +732,7 @@ namespace SPD_Checker
                 $"일괄수정 완료\n\n성공: {ok}개   실패: {err}개" +
                 (overwrite ? "" : $"\n_FIXED 사본 {newPaths.Count}개를 목록에 추가했습니다.") +
                 "\n\n재검증을 실행합니다.",
-                "일괄수정", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                "선택 수정", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
             BtnRun_Click(sender, e);   // 재검증
         }
@@ -885,10 +921,46 @@ namespace SPD_Checker
             }
         }
 
+        // ── 선택 체크박스 (헤더 전체토글 + 헤더 렌더) ──────────────────────────
+        private void DgvResults_CellPainting(object sender, DataGridViewCellPaintingEventArgs e)
+        {
+            if (e.RowIndex != -1 || e.ColumnIndex < 0 ||
+                dgvResults.Columns[e.ColumnIndex].Name != "colSelect")
+                return;
+
+            e.PaintBackground(e.CellBounds, true);
+            var box = new Size(14, 14);
+            var loc = new Point(
+                e.CellBounds.Left + (e.CellBounds.Width  - box.Width)  / 2,
+                e.CellBounds.Top  + (e.CellBounds.Height - box.Height) / 2);
+            CheckBoxRenderer.DrawCheckBox(e.Graphics, loc,
+                _selectAllChecked
+                    ? System.Windows.Forms.VisualStyles.CheckBoxState.CheckedNormal
+                    : System.Windows.Forms.VisualStyles.CheckBoxState.UncheckedNormal);
+            e.Handled = true;
+        }
+
+        private void DgvResults_HeaderCheckClick(object sender, DataGridViewCellMouseEventArgs e)
+        {
+            if (e.ColumnIndex < 0 ||
+                dgvResults.Columns[e.ColumnIndex].Name != "colSelect")
+                return;
+
+            _selectAllChecked = !_selectAllChecked;
+            foreach (DataGridViewRow row in dgvResults.Rows)
+            {
+                var cell = row.Cells["colSelect"];
+                if (cell.ReadOnly) continue;          // PASS/SKIP 제외
+                cell.Value = _selectAllChecked;
+            }
+            dgvResults.InvalidateColumn(e.ColumnIndex);
+        }
+
         // ── Double-click / Enter → Detail ─────────────────────────────────────
         private void DgvResults_CellDoubleClick(object sender, DataGridViewCellEventArgs e)
         {
             if (e.RowIndex < 0) return;
+            if (dgvResults.Columns[e.ColumnIndex].Name == "colSelect") return;
             OpenDetailForRow(e.RowIndex);
         }
 
