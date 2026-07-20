@@ -24,6 +24,10 @@ namespace SPD_Checker.Logic
         private const int MODULE_MFR_OFFSET  = 512;
         private const int DRAM_MFR_OFFSET    = 552;
         private const int DRAM_STEP_OFFSET   = 554;
+        private const int SPD_HUB_OFFSET     = 194;   // ANPEC API2201-B24
+        private const int PMIC0_OFFSET       = 198;   // ANPEC APW8502CEQBI-TRG
+        private static readonly byte[] SPD_HUB_BYTES = { 0x0B, 0x10, 0x80, 0x00 };
+        private static readonly byte[] PMIC0_BYTES   = { 0x0B, 0x10, 0x82, 0x44 };
 
         // ── XMP Byte Offsets ──────────────────────────────────────────────────
         private const int XMP_GLOBAL_BASE    = 640;
@@ -157,6 +161,7 @@ namespace SPD_Checker.Logic
             // P1: 고정값
             FixDramType(data);
             FixVddNominal(data);
+            FixDeviceInfo(data);   // SPD Hub / PMIC (ANPEC 고정값, CRC 범위 안 → CRC 전에)
 
             if (f.Valid)
             {
@@ -197,6 +202,14 @@ namespace SPD_Checker.Logic
 
         // ── P1: 고정값 ────────────────────────────────────────────────────────
         private static void FixDramType(byte[] data)   => data[DRAM_TYPE_OFFSET] = 0x12;
+
+        // SPD Hub(194~197) / PMIC0(198~201) — ANPEC 고정값 (전 파트 공통)
+        private static void FixDeviceInfo(byte[] data)
+        {
+            if (data.Length <= PMIC0_OFFSET + 3) return;
+            Array.Copy(SPD_HUB_BYTES, 0, data, SPD_HUB_OFFSET, SPD_HUB_BYTES.Length);
+            Array.Copy(PMIC0_BYTES,   0, data, PMIC0_OFFSET,   PMIC0_BYTES.Length);
+        }
         private static void FixVddNominal(byte[] data) => data[VDD_OFFSET]       = 0x00;
 
         // ── P2: 파일명 파생 ───────────────────────────────────────────────────

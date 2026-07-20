@@ -32,6 +32,28 @@
 
 ---
 
+## Module Generic Device Info (Table 93, Bytes 194~213) — SPD Hub / PMIC 검증
+
+Table 93. **전부 JEDEC CRC 범위(0~509) 안** → 값 변경 시 CRC 재계산 필수(ApplyFixes가 자동).
+
+| Device | Mfr ID | Device Type | Revision |
+|--------|--------|-------------|----------|
+| SPD Hub | 194~195 (0xC2/C3) | 196 (0xC4) | 197 (0xC5) |
+| PMIC 0 | 198~199 (0xC6/C7) | 200 (0xC8) | 201 (0xC9) |
+| PMIC 1/2 | 202~203 / 206~207 | 204 / 208 | 205 / 209 (미실장=0x00) |
+| Thermal Sensor | 210~211 | 212 | 213 |
+
+### RAmos 고정값 (전 파트 공통, ANPEC) — Check 완전 일치 + Fix 자동 기입
+
+| 항목 | 부품 | Byte 값 |
+|------|------|---------|
+| **SPD Hub** (194~197) | ANPEC **API2201-B24** | `0B 10 80 00` (Rev은 파악불가로 00) |
+| **PMIC** (198~201) | ANPEC **APW8502CEQBI-TRG** | `0B 10 82 44` |
+
+> ANPEC JEDEC ID = `0B/10` (Bank 12 / code 0x10). 과거 파일은 삼성 복사값(Hub `86 32…` / PMIC `80 B3…`)이 stale로 남아 Check FAIL → Fix로 교정. PMIC1/2는 미실장이라 0x00 유지(검증 안 함). device type/rev는 현재 전 파트 동일 가정 — 제품군이 갈리면 상수 분기 필요.
+
+---
+
 ## Manufacturing Info (Bytes 512~639)
 
 | 항목 | Byte (Dec) | Hex 주소 | 형식 | 비고 |

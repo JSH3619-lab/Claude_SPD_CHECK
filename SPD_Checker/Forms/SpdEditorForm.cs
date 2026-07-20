@@ -76,6 +76,8 @@ namespace SPD_Checker.Forms
             new KeyByteGroup { Offset = 521, Length = 30, Name = "Part Number",    CheckItem = "Part Number",            Decode = DecPartNumber  },
             new KeyByteGroup { Offset = 552, Length = 2,  Name = "DRAM Mfr ID",   CheckItem = "DRAM Mfr ID",            Decode = DecMfr         },
             new KeyByteGroup { Offset = 554, Length = 1,  Name = "DRAM Stepping", CheckItem = "DRAM Stepping",          Decode = DecStepping    },
+            new KeyByteGroup { Offset = 194, Length = 4,  Name = "SPD Hub",       CheckItem = "SPD Hub",                Decode = DecDeviceId    },
+            new KeyByteGroup { Offset = 198, Length = 4,  Name = "PMIC",          CheckItem = "PMIC",                   Decode = DecDeviceId    },
             new KeyByteGroup { Offset = 640, Length = 3, Name = "XMP ID + Ver",   CheckItem = "[XMP] ID",               Decode = DecXmpId       },
             new KeyByteGroup { Offset = 643, Length = 1, Name = "XMP Profiles",   CheckItem = "[XMP] Profiles Enabled", Decode = DecXmpProfiles },
             new KeyByteGroup { Offset = 702, Length = 2, Name = "XMP Global CRC", CheckItem = "[XMP] Global CRC",       Decode = DecCrcLE       },
@@ -1220,6 +1222,13 @@ namespace SPD_Checker.Forms
         }
 
         // ── Key Byte 디코더 (raw 표시 + 의미 텍스트) ────────────────────────
+        private static (string Raw, string Meaning) DecDeviceId(byte[] d, int o)
+        {
+            string raw = $"{d[o]:X2} {d[o+1]:X2} {d[o+2]:X2} {d[o+3]:X2}";
+            string mfr = (d[o] == 0x0B && d[o+1] == 0x10) ? "ANPEC" : $"Mfr {d[o]:X2}/{d[o+1]:X2}";
+            return (raw, $"{mfr} | Type 0x{d[o+2]:X2} Rev 0x{d[o+3]:X2}");
+        }
+
         private static (string Raw, string Meaning) DecStepping(byte[] d, int o)
         {
             byte v = d[o];

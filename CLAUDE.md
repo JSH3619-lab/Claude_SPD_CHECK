@@ -49,6 +49,7 @@
 | Verify | 검증 이력 저장 — Save Verified 버튼 / SHA256 해시 기반 중복 감지 / PASS 파일만 Verified/ 복사 / verification_log.csv 기록 | ✅ 완료 |
 | Logging | 시스템 로그 — `%LOCALAPPDATA%\SPD_Studio\logs\app_YYYYMMDD.log` / INFO·WARN·ERROR·FATAL 4단계 / 7일 자동 삭제 / 전역 예외 핸들러 | ✅ 완료 |
 | Stepping | DRAM Stepping(Byte 554) 자동 유도 — `SpdParser.BuildDramStepping` (CompGen=Die Gen 글자 → ASCII, 삼성B=95·하이닉스M=FF 벤더 예외). Check 검증 + Fix/Auto-Gen 기입 + Editor 표시. CRC 범위 밖이라 재계산 불필요 (→ jesd400_bytes.md) | ✅ 완료 |
+| Hub/PMIC | SPD Hub(194~197)·PMIC(198~201) 고정값 검증 — ANPEC API2201-B24=`0B10 8000` / APW8502=`0B10 8244`. 과거 삼성 stale값(86 32/80 B3) → Check FAIL, Fix 자동 교정(CRC 범위 안이라 재계산). 전 파트 공통 고정 상수, 완전 일치 판정. Editor 표시 (→ jesd400_bytes.md) | ✅ 완료 |
 
 ### XMP 3.0 검증 항목 (Phase XMP 세부)
 

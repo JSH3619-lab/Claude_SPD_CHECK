@@ -187,6 +187,8 @@ namespace SPD_Checker.Logic
             // ── Phase 2: Manufacturer ID ─────────────────────────────────────
             results.Add(CheckModuleMfr(fileName, data));
             results.Add(CheckDramMfr(fileName, partNumberFromName, data));
+            results.Add(CheckFixedBlock(fileName, "SPD Hub", SPD_HUB_OFFSET, SPD_HUB_EXPECTED, data, "Byte 194~197 (0xC2~C5) | ANPEC API2201 고정값"));
+            results.Add(CheckFixedBlock(fileName, "PMIC",    PMIC0_OFFSET,   PMIC0_EXPECTED,   data, "Byte 198~201 (0xC6~C9) | ANPEC APW8502 고정값"));
 
             // ── Phase 3: Part Content Validation ─────────────────────────────
             PartFields fields = SpdParser.ParsePartFields(partNumberFromName);
@@ -262,6 +264,12 @@ namespace SPD_Checker.Logic
         private const int MODULE_MFR_OFFSET = 512;   // 0x200
         private const int DRAM_MFR_OFFSET   = 552;   // 0x228
         private const int DRAM_STEP_OFFSET  = 554;   // 0x22A
+
+        // Table 93 — Module Generic Device Info (ANPEC 고정값, 전 파트 공통)
+        private const int SPD_HUB_OFFSET = 194;   // 0xC2 (194~197: MfrID1/2, DevType, Rev)
+        private const int PMIC0_OFFSET   = 198;   // 0xC6 (198~201)
+        private static readonly byte[] SPD_HUB_EXPECTED = { 0x0B, 0x10, 0x80, 0x00 }; // API2201-B24
+        private static readonly byte[] PMIC0_EXPECTED   = { 0x0B, 0x10, 0x82, 0x44 }; // APW8502CEQBI-TRG
 
         // Module Mfr 고정값 (RAmos Technology)
         private static readonly byte MODULE_MFR_B1 = 0x07;
@@ -1117,6 +1125,30 @@ namespace SPD_Checker.Logic
                 Pass      = passTrasN,
                 Status    = passTrasN ? CheckStatus.Pass : CheckStatus.Fail,
                 Note      = $"Byte {baseOffset + 19}~{baseOffset + 20} (BASE+19~20)"
+            };
+        }
+
+        // 고정 바이트 블록 대조 (SPD Hub / PMIC — Table 93, 전 파트 공통값)
+        private static CheckResult CheckFixedBlock(string fileName, string item, int offset, byte[] expected, byte[] data, string note)
+        {
+            bool has = data.Length >= offset + expected.Length;
+            string exp = string.Join(" ", expected.Select(b => b.ToString("X2")));
+            string act = has
+                ? string.Join(" ", Enumerable.Range(offset, expected.Length).Select(i => data[i].ToString("X2")))
+                : "N/A (파일 짧음)";
+            bool pass = has;
+            if (has)
+                for (int i = 0; i < expected.Length; i++)
+                    if (data[offset + i] != expected[i]) { pass = false; break; }
+            return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = item,
+                Expected  = exp,
+                Actual    = act,
+                Pass      = pass,
+                Status    = pass ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = note
             };
         }
 
