@@ -11,6 +11,7 @@ namespace SPD_Checker
         static void Main()
         {
             AppLogger.Init();
+            RulesConfig.Init();   // 식별 규칙 로드 (rules.json, 없으면 기본값 생성)
 
             Application.ThreadException += (s, e) =>
             {

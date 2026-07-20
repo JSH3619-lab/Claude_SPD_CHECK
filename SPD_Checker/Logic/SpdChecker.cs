@@ -187,8 +187,8 @@ namespace SPD_Checker.Logic
             // ── Phase 2: Manufacturer ID ─────────────────────────────────────
             results.Add(CheckModuleMfr(fileName, data));
             results.Add(CheckDramMfr(fileName, partNumberFromName, data));
-            results.Add(CheckFixedBlock(fileName, "SPD Hub", SPD_HUB_OFFSET, SPD_HUB_EXPECTED, data, "Byte 194~197 (0xC2~C5) | ANPEC API2201 고정값"));
-            results.Add(CheckFixedBlock(fileName, "PMIC",    PMIC0_OFFSET,   PMIC0_EXPECTED,   data, "Byte 198~201 (0xC6~C9) | ANPEC APW8502 고정값"));
+            results.Add(CheckFixedBlock(fileName, "SPD Hub", SPD_HUB_OFFSET, RulesConfig.SpdHub, data, "Byte 194~197 (0xC2~C5) | ANPEC API2201 고정값"));
+            results.Add(CheckFixedBlock(fileName, "PMIC",    PMIC0_OFFSET,   RulesConfig.Pmic,   data, "Byte 198~201 (0xC6~C9) | ANPEC APW8502 고정값"));
 
             // ── Phase 3: Part Content Validation ─────────────────────────────
             PartFields fields = SpdParser.ParsePartFields(partNumberFromName);
@@ -265,28 +265,12 @@ namespace SPD_Checker.Logic
         private const int DRAM_MFR_OFFSET   = 552;   // 0x228
         private const int DRAM_STEP_OFFSET  = 554;   // 0x22A
 
-        // Table 93 — Module Generic Device Info (ANPEC 고정값, 전 파트 공통)
+        // Table 93 — Module Generic Device Info (오프셋만 유지; 값은 RulesConfig)
         private const int SPD_HUB_OFFSET = 194;   // 0xC2 (194~197: MfrID1/2, DevType, Rev)
         private const int PMIC0_OFFSET   = 198;   // 0xC6 (198~201)
-        private static readonly byte[] SPD_HUB_EXPECTED = { 0x0B, 0x10, 0x80, 0x00 }; // API2201-B24
-        private static readonly byte[] PMIC0_EXPECTED   = { 0x0B, 0x10, 0x82, 0x44 }; // APW8502CEQBI-TRG
 
-        // Module Mfr 고정값 (RAmos Technology)
-        private static readonly byte MODULE_MFR_B1 = 0x07;
-        private static readonly byte MODULE_MFR_B2 = 0x25;
-
-        // DRAM Mfr 매핑 (파일명 첫 '-' 이후 첫 글자 → Byte552, Byte553)
-        // 복수 허용값: 같은 계열 DRAM을 공유하는 경우 배열로 등록
-        private static readonly Dictionary<char, (byte B1, byte B2, string Name)[]> DRAM_MFR_MAP =
-            new Dictionary<char, (byte, byte, string)[]>
-            {
-                { 'G', new (byte, byte, string)[] { (0x80, 0xCE, "Samsung") } },
-                { 'S', new (byte, byte, string)[] { (0x80, 0xCE, "Samsung") } },
-                { 'H', new (byte, byte, string)[] { (0x80, 0xAD, "SK Hynix") } },
-                { 'N', new (byte, byte, string)[] { (0x83, 0x0B, "Nanya")  } },
-                { 'C', new (byte, byte, string)[] { (0x8A, 0x91, "CXMT")   } },
-                { 'M', new (byte, byte, string)[] { (0x80, 0x2C, "Micron"), (0x02, 0xB5, "Spectek") } },
-            };
+        // 식별 규칙 값(Module Mfr / DRAM Mfr / SPD Hub / PMIC)은 RulesConfig로 외부화됨.
+        // 기본값: Module Mfr=07 25(RAmos) / DRAM Mfr: G,S=80CE H=80AD N=830B C=8A91 M=802C(+02B5 Spectek)
 
         // ── Phase 1: 규칙 뷰어용 스냅샷 (읽기전용) ─────────────────────────────
         // 각 컬럼: { 항목, Byte, 값, 근거 }
@@ -295,11 +279,11 @@ namespace SPD_Checker.Logic
             var rows = new List<string[]>
             {
                 new[] { "DRAM Type", "2", $"{(byte)0x12:X2}", "JESD400-5C · DDR5" },
-                new[] { "SPD Hub", "194~197", string.Join(" ", SPD_HUB_EXPECTED.Select(b => b.ToString("X2"))), "ANPEC API2201-B24" },
-                new[] { "PMIC", "198~201", string.Join(" ", PMIC0_EXPECTED.Select(b => b.ToString("X2"))), "ANPEC APW8502CEQBI-TRG" },
-                new[] { "Module Mfr", "512~513", $"{MODULE_MFR_B1:X2} {MODULE_MFR_B2:X2}", "JEP-106 · RAmos" },
+                new[] { "SPD Hub", "194~197", string.Join(" ", RulesConfig.SpdHub.Select(b => b.ToString("X2"))), "ANPEC API2201-B24" },
+                new[] { "PMIC", "198~201", string.Join(" ", RulesConfig.Pmic.Select(b => b.ToString("X2"))), "ANPEC APW8502CEQBI-TRG" },
+                new[] { "Module Mfr", "512~513", $"{RulesConfig.ModuleMfr[0]:X2} {RulesConfig.ModuleMfr[1]:X2}", "JEP-106 · RAmos" },
             };
-            foreach (var kv in DRAM_MFR_MAP)
+            foreach (var kv in RulesConfig.DramMfr)
             {
                 string vals = string.Join(" / ", kv.Value.Select(c => $"{c.B1:X2} {c.B2:X2} ({c.Name})"));
                 rows.Add(new[] { $"DRAM Mfr [{kv.Key}]", "552~553", vals, "JEP-106" });
@@ -312,13 +296,15 @@ namespace SPD_Checker.Logic
         {
             byte actual1 = data[MODULE_MFR_OFFSET];
             byte actual2 = data[MODULE_MFR_OFFSET + 1];
-            bool pass    = actual1 == MODULE_MFR_B1 && actual2 == MODULE_MFR_B2;
+            byte exp1    = RulesConfig.ModuleMfr[0];
+            byte exp2    = RulesConfig.ModuleMfr[1];
+            bool pass    = actual1 == exp1 && actual2 == exp2;
 
             return new CheckResult
             {
                 FileName  = fileName,
                 CheckItem = "Module Mfr ID",
-                Expected  = $"0x{MODULE_MFR_B1:X2} / 0x{MODULE_MFR_B2:X2}  (RAmos)",
+                Expected  = $"0x{exp1:X2} / 0x{exp2:X2}  (RAmos)",
                 Actual    = $"0x{actual1:X2} / 0x{actual2:X2}",
                 Pass      = pass,
                 Status    = pass ? CheckStatus.Pass : CheckStatus.Fail,
@@ -1215,7 +1201,7 @@ namespace SPD_Checker.Logic
 
             char key = char.ToUpper(partNumberFromName[dashIdx + 1]);
 
-            if (!DRAM_MFR_MAP.TryGetValue(key, out var candidates))
+            if (!RulesConfig.DramMfr.TryGetValue(key, out var candidates))
             {
                 return new CheckResult
                 {

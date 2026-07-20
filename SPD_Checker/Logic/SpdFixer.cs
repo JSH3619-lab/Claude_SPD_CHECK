@@ -24,10 +24,8 @@ namespace SPD_Checker.Logic
         private const int MODULE_MFR_OFFSET  = 512;
         private const int DRAM_MFR_OFFSET    = 552;
         private const int DRAM_STEP_OFFSET   = 554;
-        private const int SPD_HUB_OFFSET     = 194;   // ANPEC API2201-B24
-        private const int PMIC0_OFFSET       = 198;   // ANPEC APW8502CEQBI-TRG
-        private static readonly byte[] SPD_HUB_BYTES = { 0x0B, 0x10, 0x80, 0x00 };
-        private static readonly byte[] PMIC0_BYTES   = { 0x0B, 0x10, 0x82, 0x44 };
+        private const int SPD_HUB_OFFSET     = 194;   // 값은 RulesConfig.SpdHub
+        private const int PMIC0_OFFSET       = 198;   // 값은 RulesConfig.Pmic
 
         // ── XMP Byte Offsets ──────────────────────────────────────────────────
         private const int XMP_GLOBAL_BASE    = 640;
@@ -62,21 +60,7 @@ namespace SPD_Checker.Logic
             { '1', 0x00 }, { '2', 0x08 },
         };
 
-        // RAmos Module Mfr JEDEC ID
-        private const byte RAMOS_MFR_B1 = 0x07;
-        private const byte RAMOS_MFR_B2 = 0x25;
-
-        // DRAM Mfr 코드 (파일명 '-' 이후 첫 글자) → JEDEC ID
-        private static readonly Dictionary<char, (byte b1, byte b2)> DRAM_MFR_MAP =
-            new Dictionary<char, (byte, byte)>
-            {
-                { 'G', (0x80, 0xCE) }, // Samsung
-                { 'S', (0x80, 0xCE) }, // Samsung
-                { 'H', (0x80, 0xAD) }, // SK Hynix
-                { 'N', (0x83, 0x0B) }, // Nanya
-                { 'C', (0x8A, 0x91) }, // CXMT
-                { 'M', (0x80, 0x2C) }, // Micron
-            };
+        // Module Mfr / DRAM Mfr 값은 RulesConfig로 외부화됨 (FixModuleMfrId / TryFixDramMfrId).
 
         // Speed 코드 → XMP VDD/VDDQ Byte
         private static readonly Dictionary<string, byte> SPEED_TO_VDD = new Dictionary<string, byte>(StringComparer.Ordinal)
@@ -207,8 +191,8 @@ namespace SPD_Checker.Logic
         private static void FixDeviceInfo(byte[] data)
         {
             if (data.Length <= PMIC0_OFFSET + 3) return;
-            Array.Copy(SPD_HUB_BYTES, 0, data, SPD_HUB_OFFSET, SPD_HUB_BYTES.Length);
-            Array.Copy(PMIC0_BYTES,   0, data, PMIC0_OFFSET,   PMIC0_BYTES.Length);
+            Array.Copy(RulesConfig.SpdHub, 0, data, SPD_HUB_OFFSET, RulesConfig.SpdHub.Length);
+            Array.Copy(RulesConfig.Pmic,   0, data, PMIC0_OFFSET,   RulesConfig.Pmic.Length);
         }
         private static void FixVddNominal(byte[] data) => data[VDD_OFFSET]       = 0x00;
 
@@ -300,17 +284,18 @@ namespace SPD_Checker.Logic
         private static void FixModuleMfrId(byte[] data)
         {
             if (data.Length < MODULE_MFR_OFFSET + 2) return;
-            data[MODULE_MFR_OFFSET]     = RAMOS_MFR_B1;
-            data[MODULE_MFR_OFFSET + 1] = RAMOS_MFR_B2;
+            data[MODULE_MFR_OFFSET]     = RulesConfig.ModuleMfr[0];
+            data[MODULE_MFR_OFFSET + 1] = RulesConfig.ModuleMfr[1];
         }
 
         internal static bool TryFixDramMfrId(byte[] data, char mfrCode)
         {
             if (data.Length < DRAM_MFR_OFFSET + 2) return false;
             if (mfrCode == '\0') return false;
-            if (!DRAM_MFR_MAP.TryGetValue(mfrCode, out var mfr)) return false;
-            data[DRAM_MFR_OFFSET]     = mfr.b1;
-            data[DRAM_MFR_OFFSET + 1] = mfr.b2;
+            char key = char.ToUpperInvariant(mfrCode);
+            if (!RulesConfig.DramMfr.TryGetValue(key, out var arr) || arr.Length == 0) return false;
+            data[DRAM_MFR_OFFSET]     = arr[0].B1;
+            data[DRAM_MFR_OFFSET + 1] = arr[0].B2;
             return true;
         }
 
