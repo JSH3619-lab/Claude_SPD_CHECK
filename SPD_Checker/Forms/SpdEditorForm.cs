@@ -274,7 +274,7 @@ namespace SPD_Checker.Forms
             _rankCombo       = MakePartCombo(new[] { "0 (Comp)", "1 (1R)", "2 (2R)" });
             AddPartInfoRow(grid, row++, "Rank",        _rankCombo);
 
-            _dramMfrCombo    = MakePartCombo(new[] { "S (RAmos)", "G (GIGA)", "H (Hynix)", "M (Micron)", "C (CXMT)", "N (Nanya)" });
+            _dramMfrCombo    = MakePartCombo(new[] { "S (Samsung)", "G (Samsung)", "H (Hynix)", "M (Micron)", "C (CXMT)", "N (Nanya)" });
             AddPartInfoRow(grid, row++, "DRAM Mfr",    _dramMfrCombo);
 
             _speedCombo      = MakePartCombo(new[] { "QK (4800)", "WM (5600)", "CM (6000)", "CP (6400)", "CQ (6400)", "CR (6800)", "CS (7200)" });

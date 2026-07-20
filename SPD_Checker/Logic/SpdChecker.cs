@@ -270,8 +270,8 @@ namespace SPD_Checker.Logic
         private static readonly Dictionary<char, (byte B1, byte B2, string Name)[]> DRAM_MFR_MAP =
             new Dictionary<char, (byte, byte, string)[]>
             {
-                { 'G', new (byte, byte, string)[] { (0x07, 0x25, "RAmos")  } },
-                { 'S', new (byte, byte, string)[] { (0x07, 0x25, "RAmos")  } },
+                { 'G', new (byte, byte, string)[] { (0x80, 0xCE, "Samsung") } },
+                { 'S', new (byte, byte, string)[] { (0x80, 0xCE, "Samsung") } },
                 { 'H', new (byte, byte, string)[] { (0x80, 0xAD, "SK Hynix") } },
                 { 'N', new (byte, byte, string)[] { (0x83, 0x0B, "Nanya")  } },
                 { 'C', new (byte, byte, string)[] { (0x8A, 0x91, "CXMT")   } },

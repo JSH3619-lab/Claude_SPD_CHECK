@@ -26,7 +26,7 @@
 
 | 위치 | 항목 | 비고 |
 |------|------|------|
-| [0] | DRAM Mfr 코드 | G/S=RAmos / H=SK Hynix / N=Nanya / C=CXMT / M=Micron·Spectek (Micron 계열) |
+| [0] | DRAM Mfr 코드 | G/S=Samsung (80/CE) / H=SK Hynix / N=Nanya / C=CXMT / M=Micron·Spectek (Micron 계열) |
 | 문자열 탐색 | Speed 코드 (2자) | 아래 Speed 코드 표 참조 — 고정 위치 아님, 부분문자열 탐색 (Contains) |
 
 ---

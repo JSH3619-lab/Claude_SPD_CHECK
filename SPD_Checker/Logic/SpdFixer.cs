@@ -65,8 +65,8 @@ namespace SPD_Checker.Logic
         private static readonly Dictionary<char, (byte b1, byte b2)> DRAM_MFR_MAP =
             new Dictionary<char, (byte, byte)>
             {
-                { 'G', (0x07, 0x25) }, // RAmos
-                { 'S', (0x07, 0x25) }, // RAmos
+                { 'G', (0x80, 0xCE) }, // Samsung
+                { 'S', (0x80, 0xCE) }, // Samsung
                 { 'H', (0x80, 0xAD) }, // SK Hynix
                 { 'N', (0x83, 0x0B) }, // Nanya
                 { 'C', (0x8A, 0x91) }, // CXMT
