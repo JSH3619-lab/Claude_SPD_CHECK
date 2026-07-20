@@ -40,6 +40,8 @@ namespace SPD_Checker
         private readonly Dictionary<string,int>              _failStats   = new Dictionary<string, int>();
         private readonly Dictionary<string,List<CheckResult>> _fileResults = new Dictionary<string, List<CheckResult>>();
         private BackgroundWorker                             _worker;
+        private readonly System.Diagnostics.Stopwatch       _runSw   = new System.Diagnostics.Stopwatch();
+        private readonly System.Diagnostics.Stopwatch       _checkSw = new System.Diagnostics.Stopwatch();
 
         private int _filePass;
         private int _fileFail;
@@ -460,76 +462,78 @@ namespace SPD_Checker
 
         private void Worker_DoWork(object sender, DoWorkEventArgs e)
         {
-            var files = (List<string>)e.Argument;
-            for (int i = 0; i < files.Count; i++)
+            var files   = (List<string>)e.Argument;
+            var results = new List<CheckResult>[files.Count];
+            int done    = 0;
+
+            // 파일 읽기(특히 네트워크 지연) 병렬화 — CheckFile은 정적·무상태라 스레드 안전
+            _checkSw.Start();
+            var opts = new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = 16 };
+            System.Threading.Tasks.Parallel.For(0, files.Count, opts, i =>
             {
-                if (_worker.CancellationPending) { e.Cancel = true; return; }
                 string file = files[i];
-                List<CheckResult> results;
                 try
                 {
-                    results = SpdChecker.CheckFile(file);
+                    results[i] = SpdChecker.CheckFile(file);
                 }
                 catch (Exception ex)
                 {
                     AppLogger.Error("MainForm", $"파일 검증 예외: {Path.GetFileName(file)}", ex);
-                    results = new List<CheckResult> {
+                    results[i] = new List<CheckResult> {
                         new CheckResult { FileName = Path.GetFileName(file),
                             CheckItem = "ERROR", Pass = false, Status = CheckStatus.Fail,
                             Note = "예외: " + ex.Message }
                     };
                 }
-                _worker.ReportProgress(0, new ProgressInfo
-                {
-                    FileIndex  = i + 1,
-                    TotalFiles = files.Count,
-                    FileName   = Path.GetFileName(file),
-                    Results    = results
-                });
-            }
+                int c = System.Threading.Interlocked.Increment(ref done);
+                _worker.ReportProgress(c, files.Count);
+            });
+            _checkSw.Stop();
+
+            // 파일 순서대로 (파일명, 결과) 수집 → UI는 완료 후 일괄 반영
+            var ordered = new List<KeyValuePair<string, List<CheckResult>>>(files.Count);
+            for (int i = 0; i < files.Count; i++)
+                ordered.Add(new KeyValuePair<string, List<CheckResult>>(Path.GetFileName(files[i]), results[i]));
+            e.Result = ordered;
         }
 
         private void Worker_ProgressChanged(object sender, ProgressChangedEventArgs e)
         {
-            var info = (ProgressInfo)e.UserState;
-            progressBar.Maximum = info.TotalFiles;
-            progressBar.Value   = info.FileIndex;
-            lblProgress.Text    = string.Format("Checking ({0}/{1}): {2}",
-                                                info.FileIndex, info.TotalFiles, info.FileName);
+            int total = (int)e.UserState;
+            progressBar.Maximum = total;
+            if (e.ProgressPercentage <= total) progressBar.Value = e.ProgressPercentage;
+            lblProgress.Text = string.Format("Checking ({0}/{1}) ...", e.ProgressPercentage, total);
+        }
 
-            foreach (var r in info.Results)
+        // 결과 1건을 그리드·통계에 반영 (UpdateSidePanel/Summary는 호출부에서 일괄 1회)
+        private void AddResultToGrid(string fileName, List<CheckResult> results)
+        {
+            foreach (var r in results)
                 _results.Add(r);
+            _fileResults[fileName] = results;
 
-            _fileResults[info.FileName] = info.Results;
+            bool isSkip  = results.Count == 1 && results[0].Status == CheckStatus.Skip;
+            bool allPass = !isSkip && results.All(r => r.Status == CheckStatus.Pass);
 
-            bool isSkip  = info.Results.Count == 1 && info.Results[0].Status == CheckStatus.Skip;
-            bool allPass = !isSkip && info.Results.All(r => r.Status == CheckStatus.Pass);
-
-            // Failed Items: 항목명만 표시 (Expected/Actual 제거)
             string failedStr = "";
             if (!allPass && !isSkip)
             {
-                var failNames = info.Results
-                    .Where(r => r.Status == CheckStatus.Fail)
-                    .Select(r => r.CheckItem)
-                    .ToList();
+                var failNames = results.Where(r => r.Status == CheckStatus.Fail).Select(r => r.CheckItem).ToList();
                 failedStr = string.Join(",  ", failNames);
-
                 foreach (string name in failNames)
                 {
                     if (!_failStats.ContainsKey(name)) _failStats[name] = 0;
                     _failStats[name]++;
                 }
-                UpdateSidePanel();
             }
             else if (isSkip)
             {
-                failedStr = info.Results[0].Note;
+                failedStr = results[0].Note;
             }
 
             string overallResult = isSkip ? "SKIP" : (allPass ? "PASS" : "FAIL");
             bool isFail = overallResult == "FAIL";
-            int rowIdx = dgvResults.Rows.Add(isFail, info.FileName, overallResult, failedStr);
+            int rowIdx = dgvResults.Rows.Add(isFail, fileName, overallResult, failedStr);
 
             var row = dgvResults.Rows[rowIdx];
             if (!isFail)                       // PASS/SKIP: 체크 불가
@@ -550,13 +554,10 @@ namespace SPD_Checker
             if (allPass)     _filePass++;
             else if (isSkip) _fileSkip++;
             else             _fileFail++;
-
-            UpdateSummary();
         }
 
         private void Worker_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
         {
-            SetRunning(false);
             if (e.Cancelled)
             {
                 lblProgress.Text = "Cancelled.";
@@ -569,16 +570,29 @@ namespace SPD_Checker
             }
             else
             {
+                // 병렬 검사 결과를 파일 순서대로 그리드에 일괄 반영
+                long gridStart = _runSw.ElapsedMilliseconds;
+                var ordered = (List<KeyValuePair<string, List<CheckResult>>>)e.Result;
+                dgvResults.SuspendLayout();
+                foreach (var kv in ordered)
+                    AddResultToGrid(kv.Key, kv.Value);
+                dgvResults.ResumeLayout();
+                UpdateSidePanel();
+
                 lblProgress.Text = string.Format(
                     "Complete.  Files: {0}   PASS: {1}   FAIL: {2}   SKIP: {3}",
                     _filePass + _fileFail + _fileSkip, _filePass, _fileFail, _fileSkip);
                 AppLogger.Info("MainForm", $"검증 완료 — 총 {_filePass + _fileFail + _fileSkip}개  PASS={_filePass}  FAIL={_fileFail}  SKIP={_fileSkip}");
+                _runSw.Stop();
+                long total = _runSw.ElapsedMilliseconds, chk = _checkSw.ElapsedMilliseconds, grid = total - gridStart;
+                AppLogger.Info("MainForm", $"[PERF] Run 총 {total}ms  (검사·읽기 {chk}ms / 그리드 {grid}ms)  파일 {_filePass + _fileFail + _fileSkip}  [병렬]");
                 progressBar.Value    = progressBar.Maximum;
                 progressBar.ForeColor = _fileFail > 0
                     ? Color.FromArgb(210, 45, 55)
                     : Color.FromArgb(34, 153, 60);
             }
             UpdateSummary();
+            SetRunning(false);
         }
 
         // ── Button Events ────────────────────────────────────────────────────
@@ -633,6 +647,8 @@ namespace SPD_Checker
             SetRunning(true);
             string firstDir = _files.Select(Path.GetDirectoryName).FirstOrDefault(d => d != null) ?? "(다중)";
             AppLogger.Info("MainForm", $"검증 시작 — {_files.Count}개 파일  폴더={firstDir}");
+            _runSw.Restart();
+            _checkSw.Reset();
             _worker.RunWorkerAsync(_files.ToList());
         }
 
@@ -1149,12 +1165,5 @@ namespace SPD_Checker
         }
 
         // ── Progress Info ─────────────────────────────────────────────────────
-        private class ProgressInfo
-        {
-            public int               FileIndex  { get; set; }
-            public int               TotalFiles { get; set; }
-            public string            FileName   { get; set; }
-            public List<CheckResult> Results    { get; set; }
-        }
     }
 }
