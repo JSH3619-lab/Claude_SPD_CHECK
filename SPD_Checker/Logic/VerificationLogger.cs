@@ -10,13 +10,12 @@ namespace SPD_Checker.Logic
 {
     internal static class VerificationLogger
     {
-        private const string VERIFIED_DIR = "Verified";
         private const string LOG_FILE     = "verification_log.csv";
         private const string LOG_HEADER   = "FileName,SHA256,CheckDate,OverallResult,PassCount,FailCount,SkipCount";
 
         internal struct SaveSummary
         {
-            public int Saved;           // PASS → Verified/ 복사됨
+            public int Saved;           // PASS → 이력 기록됨 (복사 없음)
             public int AlreadyVerified; // 동일 해시 → 스킵
             public int Modified;        // 동일 파일명 + 다른 해시 (수정된 파일)
             public int Fail;            // FAIL 결과
@@ -35,11 +34,9 @@ namespace SPD_Checker.Logic
 
             foreach (var group in byDir)
             {
-                string sourceDir   = group.Key;
-                string verifiedDir = Path.Combine(sourceDir, VERIFIED_DIR);
-                string logPath     = Path.Combine(verifiedDir, LOG_FILE);
+                string sourceDir = group.Key;
+                string logPath   = Path.Combine(sourceDir, LOG_FILE);
 
-                Directory.CreateDirectory(verifiedDir);
                 var log = ReadLog(logPath);
 
                 foreach (string filePath in group)
@@ -79,23 +76,10 @@ namespace SPD_Checker.Logic
                         SkipCount     = skipCount,
                     });
 
-                    if (overallResult == "PASS")
-                    {
-                        try
-                        {
-                            File.Copy(filePath, Path.Combine(verifiedDir, fileName), overwrite: true);
-                            summary.Saved++;
-                        }
-                        catch { summary.Fail++; }
-                    }
-                    else if (overallResult == "FAIL")
-                    {
-                        summary.Fail++;
-                    }
-                    else
-                    {
-                        summary.Incomplete++;
-                    }
+                    // 파일 복사 없이 CSV 이력만 기록 (PASS/FAIL/INCOMPLETE 전부 로그)
+                    if (overallResult == "PASS")      summary.Saved++;
+                    else if (overallResult == "FAIL") summary.Fail++;
+                    else                              summary.Incomplete++;
                 }
 
                 WriteLog(logPath, log);

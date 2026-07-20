@@ -774,16 +774,16 @@ namespace SPD_Checker
             }
 
             var msg = new StringBuilder();
-            if (s.Saved > 0)           msg.AppendLine($"✓  Verified 저장: {s.Saved}개  →  Verified/ 폴더");
-            if (s.AlreadyVerified > 0) msg.AppendLine($"⊘  이미 검증됨 (스킵): {s.AlreadyVerified}개");
+            if (s.Saved > 0)           msg.AppendLine($"✓  이력 기록 (PASS): {s.Saved}개");
+            if (s.AlreadyVerified > 0) msg.AppendLine($"⊘  이미 기록됨 (동일 파일 스킵): {s.AlreadyVerified}개");
             if (s.Modified > 0)        msg.AppendLine($"⚠  수정된 파일 (신규 행 추가): {s.Modified}개");
-            if (s.Fail > 0)            msg.AppendLine($"✗  FAIL (미저장): {s.Fail}개");
-            if (s.Incomplete > 0)      msg.AppendLine($"—  INCOMPLETE/SKIP (미저장): {s.Incomplete}개");
+            if (s.Fail > 0)            msg.AppendLine($"✗  FAIL 기록: {s.Fail}개");
+            if (s.Incomplete > 0)      msg.AppendLine($"—  INCOMPLETE/SKIP 기록: {s.Incomplete}개");
             if (msg.Length == 0)       msg.AppendLine("처리할 파일이 없습니다.");
 
             string firstDir = _files.Select(Path.GetDirectoryName).FirstOrDefault(d => d != null);
-            if (firstDir != null && s.Saved > 0)
-                msg.AppendLine($"\n저장 위치: {Path.Combine(firstDir, "Verified")}");
+            if (firstDir != null && (s.Saved > 0 || s.Modified > 0 || s.Fail > 0 || s.Incomplete > 0))
+                msg.AppendLine($"\n이력 파일: {Path.Combine(firstDir, "verification_log.csv")}");
 
             MessageBox.Show(msg.ToString().TrimEnd(), "Save Verified",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);

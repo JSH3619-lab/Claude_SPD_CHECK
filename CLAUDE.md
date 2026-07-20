@@ -46,7 +46,7 @@
 | Editor | SPD Editor / Auto-Gen 3-mode 구조 — E-0~E-7 + E-3.5 모두 완료 (LaunchForm / Hex Grid + 실시간 검증 / Auto-Fix / Save·Load / Auto-Gen / Mode 드롭다운 + FAIL 점프 / Part Info Form 입력 + 조합 검증) | ✅ 완료 (→ phase_editor_autogen.md) |
 | UI/UX | LaunchForm 버튼 줄 넘침 제거 (창 720px, Panel 기반 버튼) / AutoGen 폴더 경로 영속 저장 (autogen_settings.cfg) / Editor 초기화 버튼 (↩ 마지막 로드·저장 상태로 복원) | ✅ 완료 |
 | UI/UX | Editor Key Bytes 상태 아이콘 색상 표시 (✓ 초록 / ✗ 빨강, RichTextBox 전환) | ✅ 완료 |
-| Verify | 검증 이력 저장 — Save Verified 버튼 / SHA256 해시 기반 중복 감지 / PASS 파일만 Verified/ 복사 / verification_log.csv 기록 | ✅ 완료 |
+| Verify | 검증 이력 저장 — Save Verified 버튼 / SHA256 해시 기반 중복 감지 / **파일 복사 없이** verification_log.csv 이력만 (소스 폴더에 직접, 날짜 포함) | ✅ 완료 |
 | Logging | 시스템 로그 — `%LOCALAPPDATA%\SPD_Studio\logs\app_YYYYMMDD.log` / INFO·WARN·ERROR·FATAL 4단계 / 7일 자동 삭제 / 전역 예외 핸들러 | ✅ 완료 |
 | Stepping | DRAM Stepping(Byte 554) 자동 유도 — `SpdParser.BuildDramStepping` (CompGen=Die Gen 글자 → ASCII, 삼성B=95·하이닉스M=FF 벤더 예외). Check 검증 + Fix/Auto-Gen 기입 + Editor 표시. CRC 범위 밖이라 재계산 불필요 (→ jesd400_bytes.md) | ✅ 완료 |
 | Hub/PMIC | SPD Hub(194~197)·PMIC(198~201) 고정값 검증 — ANPEC API2201-B24=`0B10 8000` / APW8502=`0B10 8244`. 과거 삼성 stale값(86 32/80 B3) → Check FAIL, Fix 자동 교정(CRC 범위 안이라 재계산). 전 파트 공통 고정 상수, 완전 일치 판정. Editor 표시 (→ jesd400_bytes.md) | ✅ 완료 |
@@ -125,8 +125,8 @@ C:\JSH_Folder\PGM\SPD_Check_PGM\
 - **Auto-Gen 템플릿명:** `TPL_{DIMM}{Density}{Bank}{IO}{Die}{Rank}_{Speed}.sp5` — Sourcing(RM/TM/CM/BM)·DRAM Type(R)·DRAM Mfr 제외 (모두 ApplyFixes로 자동 치환). 예: `TPL_DAG58A1_WM.sp5`
 - **Auto-Gen 폴더 설정:** `autogen_settings.cfg` (앱 실행 경로)에 저장·복원. `AutoGenForm` 생성자에서 `LoadSavedFolder()` 호출
 - **Editor 초기화 버튼:** `_originalData` 스냅샷(로드/저장 시 갱신)을 `_data`에 복사. `_dirty=false` 후 `SyncGridFromData()` + `RefreshDisplay()`
-- **VerificationLogger:** SHA256 해시로 파일 동일성 판단. 동일 해시 → 스킵. 동일 파일명+다른 해시 → 수정된 파일로 신규 행 추가. PASS(FAIL/SKIP 없음)만 Verified/ 복사. INCOMPLETE = SKIP 1개 이상.
-- **Verified/ 폴더:** 검증 대상 파일과 같은 디렉터리 내 자동 생성. `verification_log.csv`는 Verified/ 안에 위치.
+- **VerificationLogger:** SHA256 해시로 파일 동일성 판단. 동일 해시 → 스킵. 동일 파일명+다른 해시 → 수정된 파일로 신규 행 추가. **파일 복사 안 함** — PASS/FAIL/INCOMPLETE 전부 CSV 이력에만 기록. INCOMPLETE = SKIP 1개 이상.
+- **verification_log.csv:** 검증 대상 파일과 **같은 소스 폴더에 직접** 생성(Verified/ 폴더 없음). 컬럼: FileName, SHA256, CheckDate(날짜+시각), OverallResult, Pass/Fail/SkipCount. 엑셀에서 바로 열림.
 - **AppLogger 로그 위치:** `%LOCALAPPDATA%\SPD_Studio\logs\app_YYYYMMDD.log` (사용자 본인 폴더라 권한 이슈 없음). 7일 경과 자동 삭제. `Program.Main` 시작 시 `AppLogger.Init()` 호출 + 전역 예외 핸들러 2개(`Application.ThreadException` / `AppDomain.UnhandledException`) 등록 → 모든 미처리 예외 FATAL 기록 후 다이얼로그에 로그 위치 안내.
 - **로그 기록 정책:** 정상 클릭(Browse/Clear/Filter 등)은 로그 안 함. 결과 행위(Run/Save/Load/AutoFix/CRC/AutoGen)는 INFO. 사용자 실수(파일 미선택 Run / 작업자 미입력 AutoGen 등)는 WARN. 시스템 예외는 ERROR + stack trace. Hex 셀 편집 오타는 빈도 너무 높아 스킵.
 
