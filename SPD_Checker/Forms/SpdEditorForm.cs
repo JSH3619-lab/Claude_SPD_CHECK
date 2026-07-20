@@ -75,6 +75,7 @@ namespace SPD_Checker.Forms
             new KeyByteGroup { Offset = 512, Length = 2,  Name = "Module Mfr ID",  CheckItem = "Module Mfr ID",          Decode = DecMfr         },
             new KeyByteGroup { Offset = 521, Length = 30, Name = "Part Number",    CheckItem = "Part Number",            Decode = DecPartNumber  },
             new KeyByteGroup { Offset = 552, Length = 2,  Name = "DRAM Mfr ID",   CheckItem = "DRAM Mfr ID",            Decode = DecMfr         },
+            new KeyByteGroup { Offset = 554, Length = 1,  Name = "DRAM Stepping", CheckItem = "DRAM Stepping",          Decode = DecStepping    },
             new KeyByteGroup { Offset = 640, Length = 3, Name = "XMP ID + Ver",   CheckItem = "[XMP] ID",               Decode = DecXmpId       },
             new KeyByteGroup { Offset = 643, Length = 1, Name = "XMP Profiles",   CheckItem = "[XMP] Profiles Enabled", Decode = DecXmpProfiles },
             new KeyByteGroup { Offset = 702, Length = 2, Name = "XMP Global CRC", CheckItem = "[XMP] Global CRC",       Decode = DecCrcLE       },
@@ -1219,6 +1220,15 @@ namespace SPD_Checker.Forms
         }
 
         // ── Key Byte 디코더 (raw 표시 + 의미 텍스트) ────────────────────────
+        private static (string Raw, string Meaning) DecStepping(byte[] d, int o)
+        {
+            byte v = d[o];
+            string meaning = v == 0xFF ? "미제공 (Undefined)"
+                           : (v >= 0x41 && v <= 0x5A) ? $"Stepping {(char)v} (ASCII)"
+                           : $"Stepping 0x{v:X2} (벤더 정의)";
+            return ($"0x{v:X2}", meaning);
+        }
+
         private static (string Raw, string Meaning) DecPartNumber(byte[] d, int o)
         {
             string ascii = Encoding.ASCII.GetString(d, o, SpdParser.PART_NUMBER_LENGTH)

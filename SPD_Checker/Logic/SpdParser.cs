@@ -17,6 +17,7 @@ namespace SPD_Checker.Logic
         public char   DieDensityCode;    // '4' / '8' / 'A' / 'H' / 'B'
         public char   RankCode;          // '0' / '1' / '2'
         public char   DramMfrCode;       // '-' 이후 첫 글자 (G/S/H/N/C/M)
+        public char   CompGen;           // CompGen(#9) = Die Gen 글자 (A/B/P/E/M …) — Stepping 유도용
         public string SpeedCode;         // "QK" / "WM" / "CM" / "CP" / "CQ" / "CR" / "CS"  (null = 미검출)
         public bool   Valid;
         public string Error;
@@ -40,6 +41,7 @@ namespace SPD_Checker.Logic
         public const int PART_NUMBER_LENGTH   = 30;    // Bytes 521~550
         public const int MODULE_MFR_OFFSET    = 512;   // 0x200
         public const int DRAM_MFR_OFFSET      = 552;   // 0x228
+        public const int DRAM_STEP_OFFSET     = 554;   // 0x22A (DRAM Stepping)
         public const int CRC_OFFSET           = 510;   // 0x1FE
 
         public const int DRAM_TYPE_OFFSET     =   2;
@@ -171,6 +173,7 @@ namespace SPD_Checker.Logic
             f.CompositionCode = char.ToUpper(core[5]);
             f.DieDensityCode  = char.ToUpper(core[6]);
             f.RankCode        = core[7];
+            if (core.Length >= 9) f.CompGen = char.ToUpper(core[8]);   // CompGen(#9) = Die Gen
 
             // suffix: '-' 이후 → DRAM Mfr 첫 글자 + Speed 코드 탐색
             if (dashIdx >= 0 && dashIdx + 1 < partNoFromName.Length)
@@ -209,6 +212,22 @@ namespace SPD_Checker.Logic
                 case 'N': return "S9";
                 default:  return "S?";
             }
+        }
+
+        // ── DRAM Stepping (Byte 554) 유도 ──────────────────────────────────────
+        // DieGen(CompGen 글자) → stepping byte.
+        // 벤더 예외(업체 정의, JEDEC 아님): 삼성 B-die=0x95 / 하이닉스 M-die=0xFF.
+        // 그 외 = 글자의 ASCII (JEDEC §20.8 규칙). DieGen 없음/무효 = 0xFF(미제공).
+        public static byte BuildDramStepping(PartFields f)
+        {
+            char gen = char.ToUpperInvariant(f.CompGen);
+            if (gen < 'A' || gen > 'Z') return 0xFF;          // 없음/무효 → 미제공
+            char mfr = char.ToUpperInvariant(f.DramMfrCode);
+            bool samsung = mfr == 'G' || mfr == 'S';
+            bool hynix   = mfr == 'H';
+            if (samsung && gen == 'B') return 0x95;           // 예외 (벤더 정의)
+            if (hynix   && gen == 'M') return 0xFF;           // 예외 (벤더 정의)
+            return (byte)gen;                                 // ASCII (A=0x41 …)
         }
 
         // ── 골든 샘플 템플릿 파일명 조립 ────────────────────────────────────

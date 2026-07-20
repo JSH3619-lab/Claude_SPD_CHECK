@@ -48,6 +48,7 @@
 | UI/UX | Editor Key Bytes 상태 아이콘 색상 표시 (✓ 초록 / ✗ 빨강, RichTextBox 전환) | ✅ 완료 |
 | Verify | 검증 이력 저장 — Save Verified 버튼 / SHA256 해시 기반 중복 감지 / PASS 파일만 Verified/ 복사 / verification_log.csv 기록 | ✅ 완료 |
 | Logging | 시스템 로그 — `%LOCALAPPDATA%\SPD_Studio\logs\app_YYYYMMDD.log` / INFO·WARN·ERROR·FATAL 4단계 / 7일 자동 삭제 / 전역 예외 핸들러 | ✅ 완료 |
+| Stepping | DRAM Stepping(Byte 554) 자동 유도 — `SpdParser.BuildDramStepping` (CompGen=Die Gen 글자 → ASCII, 삼성B=95·하이닉스M=FF 벤더 예외). Check 검증 + Fix/Auto-Gen 기입 + Editor 표시. CRC 범위 밖이라 재계산 불필요 (→ jesd400_bytes.md) | ✅ 완료 |
 
 ### XMP 3.0 검증 항목 (Phase XMP 세부)
 

@@ -47,6 +47,20 @@
 | DRAM Mfr ID 2nd | 553 | 0x229 | - | |
 | DRAM Stepping | 554 | 0x22A | ASCII/HEX | 0xFF = 미정의 |
 
+### Byte 554 — DRAM Stepping 자동 유도 (`SpdParser.BuildDramStepping`)
+
+파트 넘버 **CompGen(#9) = Die Gen 글자**로 stepping 값을 유도. Check 검증 + Fix/Auto-Gen 기입 모두 이 값 기준.
+Byte 554는 **어떤 CRC 범위에도 안 들어감**(JEDEC 0~509 밖, XMP 640+ 밖) → 기입 시 CRC 재계산 불필요.
+
+| 조건 | Byte 554 | 근거 |
+|------|----------|------|
+| 삼성(G/S) + `B`-die | `0x95` | **벤더 정의 (JEDEC 아님)** — 업체 테이블 |
+| 하이닉스(H) + `M`-die | `0xFF` | **벤더 정의 (JEDEC 아님)** — 업체 테이블 |
+| 그 외 다이 | 글자 **ASCII** (A=`41`·P=`50`·E=`45` …) | JESD400-5C §20.8 (단일 글자=대문자 ASCII) |
+| Die Gen 없음/무효 | `0xFF` (미제공) | JESD400-5C §20.8 |
+
+> **주의:** 예외값(삼성 B=95, 하이닉스 M=FF)은 JEDEC 규격이 아니라 **DRAM 벤더가 정의한 값**. §20.8은 554를 "straight hex, 벤더 정의"로 열어둠. 벤더가 새 예외를 통지하면 `BuildDramStepping`에 추가.
+
 ---
 
 ## CRC (Bytes 510~511, 0x1FE~0x1FF) — Phase 4 검증 대상

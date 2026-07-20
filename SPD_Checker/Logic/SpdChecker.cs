@@ -207,6 +207,7 @@ namespace SPD_Checker.Logic
             {
                 results.Add(CheckDramType(fileName, data));
                 results.Add(CheckModuleType(fileName, fields, data));
+                results.Add(CheckDramStepping(fileName, fields, data));
                 if (fields.SpeedCode != null && SpdParser.XMP_SPEED_CODES.Contains(fields.SpeedCode))
                     results.Add(CheckXmpDimmType(fileName, fields));
                 results.Add(CheckDieDensity(fileName, fields, data));
@@ -260,6 +261,7 @@ namespace SPD_Checker.Logic
 
         private const int MODULE_MFR_OFFSET = 512;   // 0x200
         private const int DRAM_MFR_OFFSET   = 552;   // 0x228
+        private const int DRAM_STEP_OFFSET  = 554;   // 0x22A
 
         // Module Mfr 고정값 (RAmos Technology)
         private static readonly byte MODULE_MFR_B1 = 0x07;
@@ -1115,6 +1117,26 @@ namespace SPD_Checker.Logic
                 Pass      = passTrasN,
                 Status    = passTrasN ? CheckStatus.Pass : CheckStatus.Fail,
                 Note      = $"Byte {baseOffset + 19}~{baseOffset + 20} (BASE+19~20)"
+            };
+        }
+
+        // DRAM Stepping (Byte 554) — DieGen(CompGen) 기반 유도값과 대조
+        private static CheckResult CheckDramStepping(string fileName, PartFields fields, byte[] data)
+        {
+            byte expected = SpdParser.BuildDramStepping(fields);
+            bool hasByte  = data.Length > DRAM_STEP_OFFSET;
+            byte actual   = hasByte ? data[DRAM_STEP_OFFSET] : (byte)0x00;
+            bool pass     = hasByte && actual == expected;
+            string gen    = (fields.CompGen == '\0') ? "-" : fields.CompGen.ToString();
+            return new CheckResult
+            {
+                FileName  = fileName,
+                CheckItem = "DRAM Stepping",
+                Expected  = $"0x{expected:X2}  (DieGen '{gen}')",
+                Actual    = hasByte ? $"0x{actual:X2}" : "N/A (파일 짧음)",
+                Pass      = pass,
+                Status    = pass ? CheckStatus.Pass : CheckStatus.Fail,
+                Note      = "Byte 554 (0x22A) | DieGen 유도 (삼성B=95·하이닉스M=FF 예외, 그외 ASCII)"
             };
         }
 

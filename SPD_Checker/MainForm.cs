@@ -61,6 +61,7 @@ namespace SPD_Checker
             ("Ph.1", "Part Number"),
             ("Ph.2", "Module Mfr ID"),
             ("",     "DRAM Mfr ID"),
+            ("",     "DRAM Stepping"),
             ("Ph.3", "DRAM Type"),
             ("",     "Module Type"),
             ("",     "DIMM Type (XMP)"),

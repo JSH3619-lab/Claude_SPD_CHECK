@@ -23,6 +23,7 @@ namespace SPD_Checker.Logic
         private const int PART_NUMBER_LENGTH =  30;
         private const int MODULE_MFR_OFFSET  = 512;
         private const int DRAM_MFR_OFFSET    = 552;
+        private const int DRAM_STEP_OFFSET   = 554;
 
         // ── XMP Byte Offsets ──────────────────────────────────────────────────
         private const int XMP_GLOBAL_BASE    = 640;
@@ -174,6 +175,10 @@ namespace SPD_Checker.Logic
                 // P4: Mfr ID
                 FixModuleMfrId(data);
                 TryFixDramMfrId(data, f.DramMfrCode);
+
+                // P4: DRAM Stepping (Byte 554) — DieGen 기반 유도 (CRC 범위 밖)
+                if (data.Length > DRAM_STEP_OFFSET)
+                    data[DRAM_STEP_OFFSET] = SpdParser.BuildDramStepping(f);
             }
 
             // JEDEC CRC — 항상 마지막
